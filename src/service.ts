@@ -1,13 +1,13 @@
-import { Lifecycle } from "@well-known-components/interfaces"
-import { setupRouter } from "./controllers/routes"
-import { AppComponents, GlobalContext, TestComponents } from "./types"
-import { godotGenerateSceneImages } from "./runners/godot_generate_scene_images"
+import { Lifecycle } from '@well-known-components/interfaces'
+import { setupRouter } from './controllers/routes'
+import { AppComponents, GlobalContext, TestComponents } from './types'
+import { godotGenerateSceneImages } from './runners/godot_generate_scene_images'
 
 // this function wires the business logic (adapters & controllers) with the components (ports)
 export async function main(program: Lifecycle.EntryPointParameters<AppComponents | TestComponents>) {
   const { components, startComponents } = program
   const globalContext: GlobalContext = {
-    components,
+    components
   }
 
   // wire the HTTP router (make it automatic? TBD)
@@ -23,7 +23,7 @@ export async function main(program: Lifecycle.EntryPointParameters<AppComponents
   await startComponents()
 
   const logger = components.logs.getLogger('main-loop')
-  const processMethod = await components.config.getString('PROCESS_METHOD') || 'log'
+  const processMethod = (await components.config.getString('PROCESS_METHOD')) || 'log'
 
   components.runner.runTask(async (opt) => {
     while (opt.isRunning) {
@@ -33,7 +33,7 @@ export async function main(program: Lifecycle.EntryPointParameters<AppComponents
             await godotGenerateSceneImages(globalContext.components, job, message)
             break
           case 'log':
-            logger.info("Consume and Process: ", { job: JSON.stringify(job), message: JSON.stringify(message) })
+            logger.info('Consume and Process: ', { job: JSON.stringify(job), message: JSON.stringify(message) })
             break
         }
       })

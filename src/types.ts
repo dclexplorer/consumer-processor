@@ -1,17 +1,17 @@
-import type { IFetchComponent } from "@well-known-components/http-server"
+import type { IFetchComponent } from '@well-known-components/http-server'
 import type {
   IConfigComponent,
   ILoggerComponent,
   IHttpServerComponent,
   IBaseComponent,
-  IMetricsComponent,
-} from "@well-known-components/interfaces"
-import { metricDeclarations } from "./metrics"
-import { ITaskQueue } from "./adapters/sqs"
-import { DeploymentToSqs } from "@dcl/schemas/dist/misc/deployments-to-sqs"
-import { IRunnerComponent } from "./adapters/runner"
-import { Emitter } from "mitt"
-import { IStorageComponent } from "./adapters/storage"
+  IMetricsComponent
+} from '@well-known-components/interfaces'
+import { metricDeclarations } from './metrics'
+import { ITaskQueue } from './adapters/sqs'
+import { DeploymentToSqs } from '@dcl/schemas/dist/misc/deployments-to-sqs'
+import { IRunnerComponent } from './adapters/runner'
+import { Emitter } from 'mitt'
+import { IStorageComponent } from './adapters/storage'
 
 export type GlobalContext = {
   components: BaseComponents
