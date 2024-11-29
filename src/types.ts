@@ -11,6 +11,7 @@ import { ITaskQueue } from "./adapters/sqs"
 import { DeploymentToSqs } from "@dcl/schemas/dist/misc/deployments-to-sqs"
 import { IRunnerComponent } from "./adapters/runner"
 import { Emitter } from "mitt"
+import { IStorageComponent } from "./adapters/storage"
 
 export type GlobalContext = {
   components: BaseComponents
@@ -26,6 +27,7 @@ export type BaseComponents = {
   taskQueue: ITaskQueue<DeploymentToSqs>
   runner: IRunnerComponent
   deploymentsByPointer: Emitter<Record<string /* pointer */, DeploymentToSqs>>
+  storage: IStorageComponent
 }
 
 // components used in runtime

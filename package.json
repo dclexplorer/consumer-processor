@@ -23,6 +23,7 @@
     "@well-known-components/logger": "^3.1.2",
     "@well-known-components/metrics": "^2.0.1-20220909150423.commit-8f7e5bc",
     "@well-known-components/pushable-channel": "^1.0.3",
-    "aws-sdk": "^2.1407.0"
+    "aws-sdk": "^2.739.0",
+    "fast-glob": "^3.3.2"
   }
 }

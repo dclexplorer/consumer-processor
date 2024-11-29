@@ -1,6 +1,7 @@
 import { Lifecycle } from "@well-known-components/interfaces"
 import { setupRouter } from "./controllers/routes"
 import { AppComponents, GlobalContext, TestComponents } from "./types"
+import { godotGenerateSceneImages } from "./runners/godot_generate_scene_images"
 
 // this function wires the business logic (adapters & controllers) with the components (ports)
 export async function main(program: Lifecycle.EntryPointParameters<AppComponents | TestComponents>) {
@@ -22,11 +23,19 @@ export async function main(program: Lifecycle.EntryPointParameters<AppComponents
   await startComponents()
 
   const logger = components.logs.getLogger('main-loop')
+  const processMethod = await components.config.getString('PROCESS_METHOD') || 'log'
 
   components.runner.runTask(async (opt) => {
     while (opt.isRunning) {
       await components.taskQueue.consumeAndProcessJob(async (job, message) => {
-        logger.log("Deployment " + JSON.stringify(job))
+        switch (processMethod) {
+          case 'godot_minimap':
+            await godotGenerateSceneImages(globalContext.components, job, message)
+            break
+          case 'log':
+            logger.info("Consume and Process: ", { job: JSON.stringify(job), message: JSON.stringify(message) })
+            break
+        }
       })
     }
   })

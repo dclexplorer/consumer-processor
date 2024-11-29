@@ -10,6 +10,7 @@ import { DeploymentToSqs } from "@dcl/schemas/dist/misc/deployments-to-sqs"
 import AWS from "aws-sdk"
 import { createRunnerComponent } from "./adapters/runner"
 import mitt from "mitt"
+import { createS3StorageComponent } from "./adapters/storage"
 
 // Initialize all the components of the app
 export async function initComponents(): Promise<AppComponents> {
@@ -31,8 +32,15 @@ export async function initComponents(): Promise<AppComponents> {
 
   const sqsQueue = await config.getString('TASK_QUEUE')
   const taskQueue = sqsQueue ?
-  createSqsAdapter<DeploymentToSqs>({ logs, metrics }, { queueUrl: sqsQueue, queueRegion: AWS_REGION }) :
-  createMemoryQueueAdapter<DeploymentToSqs>({ logs, metrics }, { queueName: "ConversionTaskQueue" })
+    createSqsAdapter<DeploymentToSqs>({ logs, metrics }, { queueUrl: sqsQueue, queueRegion: AWS_REGION }) :
+    createMemoryQueueAdapter<DeploymentToSqs>({ logs, metrics }, { queueName: "ConversionTaskQueue" })
+
+  const bucket = await config.getString('BUCKET')
+  if (!bucket) {
+    throw new Error("Missing BUCKET");
+  }
+  const awsEndpoint = await config.getString('AWS_ENDPOINT')
+  const storage = await createS3StorageComponent(bucket, awsEndpoint)
 
   const runner = createRunnerComponent()
 
@@ -45,6 +53,7 @@ export async function initComponents(): Promise<AppComponents> {
     metrics,
     taskQueue,
     runner,
-    deploymentsByPointer: mitt()
+    deploymentsByPointer: mitt(),
+    storage,
   }
 }

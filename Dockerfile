@@ -20,6 +20,7 @@ RUN npm ci
 
 # build the app
 COPY . /app
+COPY .godot.env /app/.env
 RUN npm run build
 RUN npm run test
 
