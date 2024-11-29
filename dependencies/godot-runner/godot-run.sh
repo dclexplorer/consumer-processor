@@ -1,7 +1,8 @@
 #!/bin/bash
 
 # Set variables
-DOCKERFILE="godot.Dockerfile"
+cd ../../
+DOCKERFILE="dependencies/godot-runner/godot.Dockerfile"
 IMAGE_NAME="godot-runner"
 
 # Check for --build flag
