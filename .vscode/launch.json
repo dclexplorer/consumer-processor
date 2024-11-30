@@ -24,7 +24,8 @@
         "${workspaceFolder}/dist/**/*.js"
       ],
       "program": "${workspaceFolder}/dist/index.js",
-      "preLaunchTask": "npm: build"
+      "preLaunchTask": "npm: build",
+      "console": "integratedTerminal"
     },
     {
       "name": "Debug Jest Tests",

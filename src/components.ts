@@ -38,10 +38,7 @@ export async function initComponents(): Promise<AppComponents> {
     ? createSqsAdapter<DeploymentToSqs>({ logs, metrics }, { queueUrl: sqsQueue, queueRegion: AWS_REGION })
     : createMemoryQueueAdapter<DeploymentToSqs>({ logs, metrics }, { queueName: 'ConversionTaskQueue' })
 
-  const bucket = await config.getString('BUCKET')
-  if (!bucket) {
-    throw new Error('Missing BUCKET')
-  }
+  const bucket = await config.requireString('BUCKET')
   const awsEndpoint = await config.getString('AWS_ENDPOINT')
   const storage = await createS3StorageComponent(bucket, awsEndpoint)
 
