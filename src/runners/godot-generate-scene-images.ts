@@ -2,7 +2,7 @@ import { readdir, rm, writeFile } from 'fs/promises'
 import path from 'path'
 import { TaskQueueMessage } from '../adapters/sqs'
 import { AppComponents } from '../types'
-import { runGodot } from './run_godot'
+import { runDecentralandExplorer } from './run-decentraland-explorer'
 
 type CameraConfig = {
   position: {
@@ -94,7 +94,11 @@ export async function godotGenerateSceneImages(
 
   const timeout = 45_000 + 60000 * centersToProcess.length
   try {
-    const result = await runGodot(components, `--scene-renderer --scene-input-file ${inputDataPath}`, timeout)
+    const result = await runDecentralandExplorer(
+      components,
+      `--scene-renderer --scene-input-file ${inputDataPath}`,
+      timeout
+    )
     centersToProcess.forEach(async function (center) {
       await writeFile(`./output/${center}-stdout.log`, result.stdout)
       await writeFile(`./output/${center}-stderr.log`, result.stderr)

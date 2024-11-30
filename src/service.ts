@@ -1,7 +1,7 @@
 import { IConfigComponent, Lifecycle } from '@well-known-components/interfaces'
 import { setupRouter } from './controllers/routes'
 import { godotOptimizer } from './runners/godot-optimizer'
-import { godotGenerateSceneImages } from './runners/godot_generate_scene_images'
+import { godotGenerateSceneImages } from './runners/godot-generate-scene-images'
 import { AppComponents, GlobalContext, TestComponents } from './types'
 
 const validProcessMethods = ['godot_minimap', 'godot_optimizer', 'log'] as const
@@ -41,16 +41,21 @@ export async function main(program: Lifecycle.EntryPointParameters<AppComponents
   components.runner.runTask(async (opt) => {
     while (opt.isRunning) {
       await components.taskQueue.consumeAndProcessJob(async (job, message) => {
-        switch (processMethod) {
-          case 'godot_optimizer':
-            await godotOptimizer(job, message, globalContext.components)
-            break
-          case 'godot_minimap':
-            await godotGenerateSceneImages(globalContext.components, job, message)
-            break
-          case 'log':
-            logger.info('Consume and Process: ', { job: JSON.stringify(job), message: JSON.stringify(message) })
-            break
+        try {
+          switch (processMethod) {
+            case 'godot_optimizer':
+              await godotOptimizer(job, message, globalContext.components)
+              break
+            case 'godot_minimap':
+              await godotGenerateSceneImages(globalContext.components, job, message)
+              break
+            case 'log':
+              logger.info('Consume and Process: ', { job: JSON.stringify(job), message: JSON.stringify(message) })
+              break
+          }
+        } catch (error) {
+          logger.error(`Error processing job ${job.entity.entityId}`)
+          logger.error(error as any)
         }
       })
     }

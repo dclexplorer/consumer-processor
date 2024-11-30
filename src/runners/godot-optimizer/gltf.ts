@@ -1,4 +1,5 @@
 import { Entity } from '@dcl/schemas'
+import { ILoggerComponent } from '@well-known-components/interfaces'
 import fs from 'fs/promises'
 import path from 'path'
 import { GltfDependency } from './types'
@@ -42,10 +43,17 @@ export async function openGltf(filePath: string): Promise<GltfJsonData> {
     jsonData = JSON.parse(jsonBuffer.toString('utf8'))
   }
 
+  await file.close()
+
   return jsonData
 }
 
-export function getDependencies(sourcePath: string, gltf: GltfJsonData, entity: Entity): GltfDependency[] {
+export function getDependencies(
+  sourcePath: string,
+  gltf: GltfJsonData,
+  entity: Entity,
+  logger: ILoggerComponent.ILogger
+): GltfDependency[] {
   const dependencies = []
   const basePath = getBaseDir(sourcePath)
 
@@ -61,7 +69,7 @@ export function getDependencies(sourcePath: string, gltf: GltfJsonData, entity: 
     if (file) {
       return file.hash
     }
-    console.log(`No file found for ${filePath}`)
+    logger.error(`No file found for ${filePath}`)
     return null
   }
 
@@ -107,8 +115,9 @@ export async function modifyGltfToMapDependencies(
   targetPath: string,
   originalSceneSourcePath: string,
   entity: Entity,
+  logger: ILoggerComponent.ILogger,
   addExtension: boolean = true
-) {
+): Promise<string> {
   // Read the GLB/GLTF file
   const gltf = await openGltf(sourcePath)
 
@@ -119,7 +128,7 @@ export async function modifyGltfToMapDependencies(
   const isGlb = magicBuffer.readUInt32LE(0) === GLB_MAGIC_NUMBER
 
   // Get dependencies and map them
-  const dependencies = getDependencies(originalSceneSourcePath, gltf, entity)
+  const dependencies = getDependencies(originalSceneSourcePath, gltf, entity, logger)
 
   // Create a copy of the GLTF data to modify
   const newGltf = JSON.parse(JSON.stringify(gltf))
@@ -160,6 +169,7 @@ export async function modifyGltfToMapDependencies(
     }
   }
 
+  const finalPath = addExtension ? targetPath + (isGlb ? '.glb' : '.gltf') : targetPath
   if (isGlb) {
     // For GLB files, we need to preserve the binary chunk
     const headerBuffer = Buffer.alloc(12)
@@ -205,12 +215,12 @@ export async function modifyGltfToMapDependencies(
     binaryData.copy(output, 20 + jsonChunkPaddedLength + 8)
 
     // Save as GLB
-    await fs.writeFile(targetPath + (addExtension ? '.glb' : ''), output)
+    await fs.writeFile(finalPath, output)
   } else {
     // Save as GLTF
-    await fs.writeFile(targetPath + (addExtension ? '.gltf' : ''), JSON.stringify(newGltf, null, 2))
+    await fs.writeFile(finalPath, JSON.stringify(newGltf, null, 2))
   }
 
   await file.close()
-  return newGltf
+  return finalPath
 }

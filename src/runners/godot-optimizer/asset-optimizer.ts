@@ -46,12 +46,13 @@ export async function downloadFiles(
   content: ContentMapping[],
   override = false,
   contentContentFilesBaseUrl: string,
+  originalContentDir: string,
   logger: ILoggerComponent.ILogger
 ): Promise<DownloadedFile[]> {
   const files = content.map((file) => ({
     ...file,
     url: `${contentContentFilesBaseUrl}/contents/${file.hash}`,
-    destPath: path.join(process.cwd(), 'original-content', file.hash)
+    destPath: path.join(originalContentDir, file.hash)
   }))
 
   const MAX_CONCURRENT = 5
@@ -68,8 +69,8 @@ export async function downloadFiles(
 
         if (stats.size > 0 && !override) {
           completed++
-          logger.log(`Skipping ${file.url} - already exists with same size`)
-          logger.log(`Progress: ${completed}/${total} files downloaded (${Math.round((completed / total) * 100)}%)`)
+          logger.debug(`Skipping ${file.url} - already exists with same size`)
+          logger.debug(`Progress: ${completed}/${total} files downloaded (${Math.round((completed / total) * 100)}%)`)
           return
         }
       } catch (error) {
@@ -87,8 +88,8 @@ export async function downloadFiles(
       await fs.writeFile(file.destPath, Buffer.from(buffer))
 
       completed++
-      logger.log(`Downloaded ${file.url} - ${file.destPath}`)
-      logger.log(`Progress: ${completed}/${total} files downloaded (${Math.round((completed / total) * 100)}%)`)
+      logger.debug(`Downloaded ${file.url} - ${file.destPath}`)
+      logger.debug(`Progress: ${completed}/${total} files downloaded (${Math.round((completed / total) * 100)}%)`)
     })
   })
 
@@ -100,13 +101,14 @@ export async function downloadFiles(
 export async function getAllGltfsWithDependencies(
   entity: Entity,
   contentBaseUrl: string,
+  originalContentDir: string,
   logger: ILoggerComponent.ILogger
 ): Promise<GltfWithDependencies[]> {
   const gltfs = entity.content.filter(
     (item) => item.file.toLowerCase().endsWith('.glb') || item.file.toLowerCase().endsWith('.gltf')
   )
 
-  const gltfDownloaded = await downloadFiles(gltfs, false, contentBaseUrl, logger)
+  const gltfDownloaded = await downloadFiles(gltfs, false, contentBaseUrl, originalContentDir, logger)
 
   const gltfData: (DownloadedFile & { gltf: GltfJsonData })[] = await Promise.all(
     gltfDownloaded.map(async (item) => ({
@@ -122,7 +124,7 @@ export async function getAllGltfsWithDependencies(
 
   const gltfWithDependencies: GltfWithDependency[] = gltfData.map((item) => ({
     ...item,
-    dependencies: getDependencies(item.file, item.gltf, entity)
+    dependencies: getDependencies(item.file, item.gltf, entity, logger)
   }))
 
   const dependenciesFilesContent = gltfWithDependencies.reduce((acc: GltfDependency[], gltf: GltfWithDependency) => {
@@ -135,6 +137,6 @@ export async function getAllGltfsWithDependencies(
     })
     .filter(($) => !!$) as ContentMapping[]
 
-  await downloadFiles(dependencyContent, false, contentBaseUrl, logger)
+  await downloadFiles(dependencyContent, false, contentBaseUrl, originalContentDir, logger)
   return gltfWithDependencies
 }
