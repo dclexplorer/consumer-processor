@@ -3,7 +3,7 @@ import { createServerComponent, createStatusCheckComponent } from '@well-known-c
 import { createLogComponent } from '@well-known-components/logger'
 import { createFetchComponent } from './adapters/fetch'
 import { createMetricsComponent, instrumentHttpServerWithMetrics } from '@well-known-components/metrics'
-import { AppComponents, GlobalContext } from './types'
+import { AppComponents, GlobalContext, ProcessMethod } from './types'
 import { metricDeclarations } from './metrics'
 import { createMemoryQueueAdapter, createSqsAdapter } from './adapters/sqs'
 import { DeploymentToSqs } from '@dcl/schemas/dist/misc/deployments-to-sqs'
@@ -11,6 +11,8 @@ import AWS from 'aws-sdk'
 import { createRunnerComponent } from './adapters/runner'
 import mitt from 'mitt'
 import { createS3StorageComponent } from './adapters/storage'
+import { createSceneFetcherComponent } from './runners/crdt-runner/logic/sceneFetcher'
+import { createSnsAdapterComponent } from './adapters/sns'
 
 // Initialize all the components of the app
 export async function initComponents(): Promise<AppComponents> {
@@ -47,6 +49,14 @@ export async function initComponents(): Promise<AppComponents> {
 
   const runner = createRunnerComponent()
 
+  const processMethod: ProcessMethod = ((await config.getString('PROCESS_METHOD')) as ProcessMethod) || 'LOG'
+
+  const sceneFetcher =
+    processMethod === 'GENERATE_CRDT_FROM_SCENE' ? await createSceneFetcherComponent({ config, fetch }) : undefined
+
+  const snsArn = await config.getString('SNS_ARN')
+  const snsAdapter = snsArn ? createSnsAdapterComponent({ logs }, { snsArn, snsEndpoint: awsEndpoint }) : undefined
+
   return {
     config,
     logs,
@@ -57,6 +67,8 @@ export async function initComponents(): Promise<AppComponents> {
     taskQueue,
     runner,
     deploymentsByPointer: mitt(),
-    storage
+    storage,
+    sceneFetcher,
+    snsAdapter
   }
 }

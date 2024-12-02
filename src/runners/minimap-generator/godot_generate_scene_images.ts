@@ -1,8 +1,8 @@
 import { readdir, rm, writeFile } from 'fs/promises'
 import path from 'path'
-import { TaskQueueMessage } from '../adapters/sqs'
-import { AppComponents } from '../types'
-import { runGodot } from './run_godot'
+import { TaskQueueMessage } from '../../adapters/sqs'
+import { AppComponents } from '../../types'
+import { runGodot } from '../run_godot'
 
 type CameraConfig = {
   position: {

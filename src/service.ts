@@ -1,7 +1,8 @@
 import { Lifecycle } from '@well-known-components/interfaces'
 import { setupRouter } from './controllers/routes'
-import { AppComponents, GlobalContext, TestComponents } from './types'
-import { godotGenerateSceneImages } from './runners/godot_generate_scene_images'
+import { AppComponents, GlobalContext, ProcessMethod, TestComponents } from './types'
+import { godotGenerateSceneImages } from './runners/minimap-generator/godot_generate_scene_images'
+import { generateCrdtFromScene } from './runners/crdt-runner/run_crdt'
 
 // this function wires the business logic (adapters & controllers) with the components (ports)
 export async function main(program: Lifecycle.EntryPointParameters<AppComponents | TestComponents>) {
@@ -23,16 +24,21 @@ export async function main(program: Lifecycle.EntryPointParameters<AppComponents
   await startComponents()
 
   const logger = components.logs.getLogger('main-loop')
-  const processMethod = (await components.config.getString('PROCESS_METHOD')) || 'log'
+  const processMethod: ProcessMethod = ((await components.config.getString('PROCESS_METHOD')) as ProcessMethod) || 'LOG'
+
+  logger.info(`Start processMethod=${processMethod}`)
 
   components.runner.runTask(async (opt) => {
     while (opt.isRunning) {
       await components.taskQueue.consumeAndProcessJob(async (job, message) => {
         switch (processMethod) {
-          case 'godot_minimap':
+          case 'GODOT_GENERATE_MAP':
             await godotGenerateSceneImages(globalContext.components, job, message)
             break
-          case 'log':
+          case 'GENERATE_CRDT_FROM_SCENE':
+            await generateCrdtFromScene(globalContext.components, job, message)
+            break
+          default:
             logger.info('Consume and Process: ', { job: JSON.stringify(job), message: JSON.stringify(message) })
             break
         }

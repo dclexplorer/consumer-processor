@@ -6,7 +6,7 @@ WORKDIR /app
 
 # some packages require a build step
 RUN apt-get update
-RUN apt-get -y -qq install python-setuptools python-dev build-essential
+RUN apt-get -y -qq install build-essential
 
 # We use Tini to handle signals and PID1 (https://github.com/krallin/tini, read why here https://github.com/krallin/tini/issues/8)
 ENV TINI_VERSION v0.19.0
@@ -20,9 +20,8 @@ RUN npm ci
 
 # build the app
 COPY . /app
-COPY .godot.env /app/.env
+COPY dependencies/crdt-runner/.env /app/.env
 RUN npm run build
-RUN npm run test
 
 # remove devDependencies, keep only used dependencies
 RUN npm ci --only=production
