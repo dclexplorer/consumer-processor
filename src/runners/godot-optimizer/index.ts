@@ -21,6 +21,7 @@ type GodotOptimizerState = {
   textures: DownloadedFile[]
   contentFiles: string[]
   importResult: GodotEditorResult | null
+  resizeResult: GodotEditorResult | null
   convertionResult: GodotEditorResult | null
   reimportResult: GodotEditorResult | null
   exportResult: GodotEditorResult | null
@@ -34,7 +35,8 @@ type GodotOptimizerState = {
 export async function godotOptimizer(
   entity: DeploymentToSqs,
   _msg: TaskQueueMessage,
-  components: Pick<AppComponents, 'logs' | 'config' | 'storage'>
+  components: Pick<AppComponents, 'logs' | 'config' | 'storage'>,
+  maxImageSize: number = 512
 ): Promise<void> {
   const logger = components.logs.getLogger('godot-optimizer')
   const state: GodotOptimizerState = {
@@ -45,6 +47,7 @@ export async function godotOptimizer(
     textures: [],
     contentFiles: [],
     importResult: null,
+    resizeResult: null,
     convertionResult: null,
     reimportResult: null,
     exportResult: null,
@@ -57,7 +60,7 @@ export async function godotOptimizer(
   let zipFilePath: string | null = null
 
   try {
-    zipFilePath = await processOptimizer(state, entity, components)
+    zipFilePath = await processOptimizer(state, entity, components, maxImageSize)
   } catch (error) {
     const logger = components.logs.getLogger('godot-optimizer')
     logger.error(`Error processing job ${entity.entity.entityId}`)
@@ -103,7 +106,8 @@ export async function godotOptimizer(
 async function processOptimizer(
   state: GodotOptimizerState,
   entity: DeploymentToSqs,
-  components: Pick<AppComponents, 'logs' | 'config'>
+  components: Pick<AppComponents, 'logs' | 'config'>,
+  maxImageSize?: number
 ): Promise<string> {
   const logger = components.logs.getLogger('godot-optimizer')
 
@@ -254,9 +258,30 @@ async function processOptimizer(
     throw new Error('Imports failed')
   }
 
+  // 4.1) Resize all the texture files
+  if (maxImageSize !== undefined) {
+    const resizeGodotArgs = [
+      '--headless',
+      '--rendering-driver',
+      'opengl3',
+      '--quit-after',
+      '1000',
+      '--resize_images',
+      `${maxImageSize}`
+    ]
+    const resizeResult = await runGodotEditor(
+      godotExecutable,
+      godotProjectPath,
+      components,
+      resizeGodotArgs,
+      importTimeout
+    )
+    state.resizeResult = resizeResult
+  }
+
   // 5) Then we convert all the imported gltfs and glb to .tscn files
 
-  const convertionGodotArgs = ['--headless', '--rendering-driver', 'opengl3', '--quit-after', '1000']
+  const convertionGodotArgs = ['--headless', '--rendering-driver', 'opengl3', '--quit-after', '1000', '--glbs']
   const convertionResult = await runGodotEditor(
     godotExecutable,
     godotProjectPath,
@@ -320,6 +345,15 @@ async function processOptimizer(
 
   // TODO: could we check if every GLTF was converted correctly?
 
+  // Add the remaps for existing textures and dependencies
+  const remapped = [...textures, ...dependencies]
+  for (const file of remapped) {
+    const remapPath = path.join(godotContentDir, file.hash + '.remap')
+    const extension = path.extname(file.file)
+    const remapContent = `[remap]\n\npath="res://${file.hash}${extension}"\n`
+    await fs.writeFile(remapPath, remapContent)
+  }
+
   // 8) Prepare export_presets.cfg to only export the needed files
   const firstPosition = 'export_files='
   const endPosition = 'include_filter='
@@ -346,7 +380,7 @@ async function processOptimizer(
   await fs.writeFile(exportPresetsPath, newContent)
 
   // 9) Then we export the godot project to a zip file
-  const outputFilePath = path.join(godotProjectPath, scene.id + '-output-mobile.zip')
+  const outputFilePath = path.join(godotProjectPath, entity.entity.entityId + '-output-mobile.zip')
   const exportGodotArgs = [
     '--editor',
     '--headless',
