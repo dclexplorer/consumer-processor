@@ -3,13 +3,19 @@ import { globSync } from 'fast-glob'
 import { rm } from 'fs/promises'
 import { AppComponents } from '../../types'
 
+export type GodotEditorResult = {
+  error: boolean
+  stderr: string
+  stdout: string
+}
+
 export function runGodotEditor(
   godotEditorPath: string,
   cwd: string,
   components: Pick<AppComponents, 'logs'>,
   args: string[],
   timeout: number
-): Promise<{ error: boolean; stderr: string; stdout: string }> {
+): Promise<GodotEditorResult> {
   const logger = components.logs.getLogger('godot-editor')
 
   return new Promise(async (resolve) => {

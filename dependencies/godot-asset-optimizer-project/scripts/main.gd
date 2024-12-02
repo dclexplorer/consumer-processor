@@ -82,12 +82,16 @@ func _ready() -> void:
 	for file in glb_files:
 		prints("processing", file)
 		var instance = load("res://content/" + file).instantiate(3)
+
+		instance.rotate_y(PI)
 		create_colliders(instance)
-		
+
 		for child in instance.get_children():
 			set_new_owner(child, instance)
 		
 		var scene = PackedScene.new()
 		var result = scene.pack(instance)
 
-		ResourceSaver.save(scene, "res://glbs/" +  file + ".tscn", ResourceSaver.FLAG_REPLACE_SUBRESOURCE_PATHS)
+		var dest_filename = file.to_lower().replace(".glb", "").replace(".gltf", "") + ".tscn"
+
+		ResourceSaver.save(scene, "res://glbs/" + dest_filename, ResourceSaver.FLAG_REPLACE_SUBRESOURCE_PATHS)

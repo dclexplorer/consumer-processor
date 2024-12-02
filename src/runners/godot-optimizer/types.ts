@@ -12,6 +12,7 @@ export type ContentItem = {
 export type DownloadedFile = ContentItem & {
   url: string
   destPath: string
+  success: boolean
 }
 
 // Types for GLTF-related structures
@@ -39,7 +40,10 @@ export type GltfDependency = {
   hash: string
 }
 
-export type GltfWithDependencies = DownloadedFile & {
+export type DownloadedGltf = DownloadedFile & {
   gltf: GltfJsonData
+}
+
+export type DownloadedGltfWithDependencies = DownloadedGltf & {
   dependencies: GltfDependency[]
 }
