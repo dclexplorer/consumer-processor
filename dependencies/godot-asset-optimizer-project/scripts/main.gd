@@ -92,6 +92,6 @@ func _ready() -> void:
 		var scene = PackedScene.new()
 		var result = scene.pack(instance)
 
-		var dest_filename = file.to_lower().replace(".glb", "").replace(".gltf", "") + ".tscn"
+		var dest_filename = file.replace(".glb", "").replace(".gltf", "") + ".tscn"
 
 		ResourceSaver.save(scene, "res://glbs/" + dest_filename, ResourceSaver.FLAG_REPLACE_SUBRESOURCE_PATHS)

@@ -71,7 +71,7 @@ export async function godotOptimizer(
     state.finishedAt = new Date()
 
     // Save the report to the local file system
-    const reportFilePath = path.join(state.tempDir, `${entity.entity.entityId}-report.txt`)
+    const reportFilePath = path.join(state.tempDir, `${entity.entity.entityId}-report.json`)
     await fs.writeFile(reportFilePath, JSON.stringify(state, null, 2))
 
     state.finishedAt = new Date()
@@ -80,7 +80,7 @@ export async function godotOptimizer(
     )
 
     // Store the report and the zip file in S3
-    const s3ReportFilePath = `${entity.entity.entityId}-report.txt`
+    const s3ReportFilePath = `${entity.entity.entityId}-report.json`
     const s3ZipFilePath = `${entity.entity.entityId}.zip`
     await components.storage.storeFile(s3ReportFilePath, reportFilePath)
     if (zipFilePath) {
