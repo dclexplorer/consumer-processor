@@ -222,15 +222,7 @@ async function processOptimizer(
   state.contentFiles = contentFiles
 
   // 4) Then we import all the gltfs to the godot project
-  const importGodotArgs = [
-    '--editor',
-    '--import',
-    '--headless',
-    '--rendering-driver',
-    'opengl3',
-    '--quit-after',
-    '1000'
-  ]
+  const importGodotArgs = ['--editor', '--import', '--headless', '--rendering-driver', 'opengl3']
   const importGltfTimeout = 20000
   const importGltfDependenciesTimeout = 10000
   const importTimeout = importGltfTimeout * gltfs.length + importGltfDependenciesTimeout * state.dependencyTimeUsed.size
@@ -260,15 +252,7 @@ async function processOptimizer(
 
   // 4.1) Resize all the texture files
   if (maxImageSize !== undefined) {
-    const resizeGodotArgs = [
-      '--headless',
-      '--rendering-driver',
-      'opengl3',
-      '--quit-after',
-      '1000',
-      '--resize_images',
-      `${maxImageSize}`
-    ]
+    const resizeGodotArgs = ['--headless', '--rendering-driver', 'opengl3', '--resize_images', `${maxImageSize}`]
     const resizeResult = await runGodotEditor(
       godotExecutable,
       godotProjectPath,
@@ -281,7 +265,7 @@ async function processOptimizer(
 
   // 5) Then we convert all the imported gltfs and glb to .tscn files
 
-  const convertionGodotArgs = ['--headless', '--rendering-driver', 'opengl3', '--quit-after', '1000', '--glbs']
+  const convertionGodotArgs = ['--headless', '--rendering-driver', 'opengl3', '--glbs']
   const convertionResult = await runGodotEditor(
     godotExecutable,
     godotProjectPath,
@@ -324,15 +308,7 @@ async function processOptimizer(
   await fs.rm(godotInternalDir, { recursive: true, force: true })
 
   // 7) Then we reimport all the .tscn files to the godot project
-  const reimportGodotArgs = [
-    '--editor',
-    '--import',
-    '--headless',
-    '--rendering-driver',
-    'opengl3',
-    '--quit-after',
-    '1000'
-  ]
+  const reimportGodotArgs = ['--editor', '--import', '--headless', '--rendering-driver', 'opengl3']
 
   const reimportResult = await runGodotEditor(
     godotExecutable,

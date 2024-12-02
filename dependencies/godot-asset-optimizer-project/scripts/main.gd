@@ -112,6 +112,10 @@ func _ready() -> void:
 		var textures_files: Array[String] = get_texture_files()
 		for texture_path in textures_files:
 			var img := Image.load_from_file("res://content/" + texture_path)
+			if img == null:
+				printerr("Error loading image: ", texture_path)
+				continue
+
 			var image_width := float(img.get_width())
 			var image_height := float(img.get_height())
 			var size = max(image_height, image_width)
@@ -130,6 +134,7 @@ func _ready() -> void:
 			elif texture_path.to_lower().ends_with(".jpg") or texture_path.to_lower().ends_with(".jpeg"):
 				img.save_jpg("res://content/" + texture_path)
 	
+		get_tree().quit(0)
 		return
 		
 		
@@ -154,7 +159,9 @@ func _ready() -> void:
 
 			ResourceSaver.save(scene, "res://glbs/" + dest_filename, ResourceSaver.FLAG_REPLACE_SUBRESOURCE_PATHS)
 		
+		get_tree().quit(0)
 		return
 		
 
 	print("nothing to do")
+	get_tree().quit(0)
