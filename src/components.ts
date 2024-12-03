@@ -1,16 +1,17 @@
+import { DeploymentToSqs } from '@dcl/schemas/dist/misc/deployments-to-sqs'
 import { createDotEnvConfigComponent } from '@well-known-components/env-config-provider'
 import { createServerComponent, createStatusCheckComponent } from '@well-known-components/http-server'
 import { createLogComponent } from '@well-known-components/logger'
-import { createFetchComponent } from './adapters/fetch'
 import { createMetricsComponent, instrumentHttpServerWithMetrics } from '@well-known-components/metrics'
-import { AppComponents, GlobalContext } from './types'
-import { metricDeclarations } from './metrics'
-import { createMemoryQueueAdapter, createSqsAdapter } from './adapters/sqs'
-import { DeploymentToSqs } from '@dcl/schemas/dist/misc/deployments-to-sqs'
 import AWS from 'aws-sdk'
-import { createRunnerComponent } from './adapters/runner'
 import mitt from 'mitt'
-import { createS3StorageComponent } from './adapters/storage'
+import { createFetchComponent } from './adapters/fetch'
+import { createRunnerComponent } from './adapters/runner'
+import { createMemoryQueueAdapter, createSqsAdapter } from './adapters/sqs'
+import { createLocalStorageComponent, createS3StorageComponent } from './adapters/storage'
+import { metricDeclarations } from './metrics'
+import { AppComponents, GlobalContext } from './types'
+import path from 'path'
 
 // Initialize all the components of the app
 export async function initComponents(): Promise<AppComponents> {
@@ -39,11 +40,11 @@ export async function initComponents(): Promise<AppComponents> {
     : createMemoryQueueAdapter<DeploymentToSqs>({ logs, metrics }, { queueName: 'ConversionTaskQueue' })
 
   const bucket = await config.getString('BUCKET')
-  if (!bucket) {
-    throw new Error('Missing BUCKET')
-  }
   const awsEndpoint = await config.getString('AWS_ENDPOINT')
-  const storage = await createS3StorageComponent(bucket, awsEndpoint)
+  const storage =
+    bucket !== undefined && bucket !== ''
+      ? await createS3StorageComponent(bucket, awsEndpoint, { logs })
+      : createLocalStorageComponent(path.resolve(process.cwd(), 'storage'), { logs })
 
   const runner = createRunnerComponent()
 
