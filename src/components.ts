@@ -40,10 +40,10 @@ export async function initComponents(): Promise<AppComponents> {
     : createMemoryQueueAdapter<DeploymentToSqs>({ logs, metrics }, { queueName: 'ConversionTaskQueue' })
 
   const bucket = await config.getString('BUCKET')
-  const awsEndpoint = await config.getString('AWS_ENDPOINT')
+  const s3Endpoint = await config.getString('S3_ENDPOINT')
   const storage =
     bucket !== undefined && bucket !== ''
-      ? await createS3StorageComponent(bucket, awsEndpoint, { logs })
+      ? await createS3StorageComponent(bucket, s3Endpoint, { logs })
       : createLocalStorageComponent(path.resolve(process.cwd(), 'storage'), { logs })
 
   const runner = createRunnerComponent()

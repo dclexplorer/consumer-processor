@@ -30,7 +30,6 @@ WORKDIR /app
 COPY . /app
 
 # TEMP
-COPY dependencies/godot-asset-optimizer-project/.env /app/.env
 COPY dependencies/godot-asset-optimizer-project/entrypoint.sh /app/entrypoint.sh
 
 RUN npm i --global yarn
