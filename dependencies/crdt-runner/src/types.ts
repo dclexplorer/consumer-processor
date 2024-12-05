@@ -1,3 +1,12 @@
+import { IConfigComponent, IFetchComponent, ILoggerComponent } from '@well-known-components/interfaces'
+
+export type BaseComponents = {
+  logs: ILoggerComponent
+  config: IConfigComponent
+  fetch: IFetchComponent
+  sceneFetcher: ISceneFetcherComponent
+}
+
 export type FetchSceneResponse = {
   sceneCode: string
   sceneId: string

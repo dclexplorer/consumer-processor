@@ -20,9 +20,7 @@ RUN npm ci
 
 # build the app
 COPY . /app
-COPY dependencies/crdt-runner/.env /app/.env
 RUN npm run build
-
 # remove devDependencies, keep only used dependencies
 RUN npm ci --only=production
 

@@ -1,16 +1,8 @@
-import { FetchSceneResponse, ISceneFetcherComponent } from '../types'
-import { BaseComponents } from '../../../types'
+import { BaseComponents, FetchSceneResponse, ISceneFetcherComponent } from '../types'
 
 export async function createSceneFetcherComponent({
   fetch
 }: Pick<BaseComponents, 'config' | 'fetch'>): Promise<ISceneFetcherComponent> {
-  process.on('uncaughtException', (err, _) => {
-    console.log('Uncaught Exception', err)
-  })
-  process.on('unhandledRejection', (err, _) => {
-    console.log('Uncaught Rejection', err)
-  })
-
   async function fetchSceneCode(contentBaseUrl: string, sceneData: any) {
     const runtimeVersion: string | undefined = sceneData.metadata?.runtimeVersion
     if (runtimeVersion !== '7') {

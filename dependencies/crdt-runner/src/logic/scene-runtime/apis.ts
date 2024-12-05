@@ -15,8 +15,8 @@ import type UserActionModule from '~system/UserActionModule'
 import type Players from '~system/Players'
 import type Scene from '~system/Scene'
 import { joinBuffers } from '../../utils'
-import { BaseComponents } from '../../../../types'
-import { FetchSceneResponse } from '../../types'
+import { BaseComponents, FetchSceneResponse } from '../../types'
+import { createEventHandler, EventListener } from '../../event-handler'
 
 export type LoadableApis = {
   AdaptationLayerHelper: unknown
@@ -38,13 +38,14 @@ export type LoadableApis = {
 export type LoadableApisComponent = {
   loadableApis: LoadableApis
   getData(): Uint8Array
+  updateDataEventListener: EventListener<Uint8Array>
 }
 
-export function createLoadableApisComponent(
+export async function createLoadableApisComponent(
   { fetch }: Pick<BaseComponents, 'fetch'>,
   { contentMapping, mainCrdt }: FetchSceneResponse,
   contentBaseUrl: string
-): LoadableApisComponent {
+): Promise<LoadableApisComponent> {
   function addPlayerEntityTransform() {
     const buffer = new ReadWriteByteBuffer()
     const transform = Transform.createOrReplace(engine.PlayerEntity)
@@ -77,12 +78,14 @@ export function createLoadableApisComponent(
     return buffer.toBinary()
   }
 
+  const updateDataEventHandler = createEventHandler<Uint8Array>()
   let savedData: Uint8Array = new Uint8Array(0)
 
   let currentState: Uint8Array[] = []
   currentState = [addPlayerEntityTransform(), addUICanvasOnRootEntity(), addCameraMode()]
   if (mainCrdt) {
     savedData = joinBuffers(mainCrdt, savedData)
+    await updateDataEventHandler.emitEvent(savedData)
     currentState = [...currentState, mainCrdt]
   }
 
@@ -135,6 +138,7 @@ export function createLoadableApisComponent(
       crdtGetMessageFromRenderer: async () => ({ data: [] }),
       crdtSendToRenderer: async ({ data }: { data: Uint8Array }) => {
         savedData = joinBuffers(savedData, data)
+        await updateDataEventHandler.emitEvent(savedData)
         return { data: [] }
       },
       isServer: async () => ({ isServer: true }),
@@ -255,6 +259,7 @@ export function createLoadableApisComponent(
     loadableApis,
     getData: function () {
       return savedData
-    }
+    },
+    updateDataEventListener: updateDataEventHandler
   }
 }

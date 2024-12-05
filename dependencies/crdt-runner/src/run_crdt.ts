@@ -1,4 +1,4 @@
-import { writeFile } from 'fs/promises'
+/*import { writeFile } from 'fs/promises'
 import { AppComponents } from '../../types'
 import { TaskQueueMessage } from '../../adapters/sqs'
 import { DeploymentToSqs } from '@dcl/schemas/dist/misc/deployments-to-sqs'
@@ -53,3 +53,4 @@ export async function generateCrdtFromScene(
     logger.error(`Error ${e}`)
   }
 }
+*/
