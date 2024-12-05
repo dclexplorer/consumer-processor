@@ -171,6 +171,7 @@ export function createSqsAdapter<T>(
                 logger.info(`Processing job`, { id: message.id })
                 const result = await taskRunner(JSON.parse(it.Body!), message)
                 logger.info(`Processed job`, { id: message.id })
+                await sqs.deleteMessage({ QueueUrl: queueUsed, ReceiptHandle: it.ReceiptHandle! }).promise()
                 return { result, message }
               } catch (err: any) {
                 logger.error(err)
@@ -179,7 +180,6 @@ export function createSqsAdapter<T>(
 
                 return { result: undefined, message }
               } finally {
-                await sqs.deleteMessage({ QueueUrl: queueUsed, ReceiptHandle: it.ReceiptHandle! }).promise()
                 end()
               }
             }

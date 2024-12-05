@@ -7,7 +7,10 @@
     ]
   },
   "ignorePatterns": [
-    "jest.config.js"
+    "jest.config.js",
+    "dist/**",
+    "dependencies/**",
+    "coverage/**"
   ],
   "rules": {
     "prettier/prettier": ["error", {

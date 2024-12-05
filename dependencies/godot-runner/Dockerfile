@@ -18,6 +18,8 @@ ENV CURRENT_VERSION=${CURRENT_VERSION:-Unknown}
 # build the app
 WORKDIR /app
 COPY . /app
+COPY dependencies/godot-runner/.env .env
+COPY dependencies/godot-runner/godot-entrypoint.sh godot-entrypoint.sh
 
 RUN npm i --global yarn
 RUN yarn --frozen-lockfile

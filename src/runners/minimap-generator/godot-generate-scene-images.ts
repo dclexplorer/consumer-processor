@@ -1,8 +1,8 @@
 import { readdir, rm, writeFile } from 'fs/promises'
 import path from 'path'
-import { TaskQueueMessage } from '../adapters/sqs'
-import { AppComponents } from '../types'
-import { runDecentralandExplorer } from './run-decentraland-explorer'
+import { runDecentralandExplorer } from '../run-decentraland-explorer'
+import { AppComponents } from '../../types'
+import { TaskQueueMessage } from '../../adapters/sqs'
 
 type CameraConfig = {
   position: {

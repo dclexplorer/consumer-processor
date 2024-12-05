@@ -2,8 +2,8 @@
 
 # Set variables
 cd ../../
-DOCKERFILE="dependencies/godot-runner/godot.Dockerfile"
-IMAGE_NAME="godot-runner"
+DOCKERFILE="dependencies/crdt-runner/Dockerfile"
+IMAGE_NAME="crdt-runner"
 
 # Check for --build flag
 if [[ "$1" == "--build" ]]; then

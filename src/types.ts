@@ -12,6 +12,7 @@ import { DeploymentToSqs } from '@dcl/schemas/dist/misc/deployments-to-sqs'
 import { IRunnerComponent } from './adapters/runner'
 import { Emitter } from 'mitt'
 import { IStorageComponent } from './adapters/storage'
+import { ISNSAdapterComponent } from './adapters/sns'
 
 export type GlobalContext = {
   components: BaseComponents
@@ -28,6 +29,7 @@ export type BaseComponents = {
   runner: IRunnerComponent
   deploymentsByPointer: Emitter<Record<string /* pointer */, DeploymentToSqs>>
   storage: IStorageComponent
+  snsAdapter: ISNSAdapterComponent
 }
 
 // components used in runtime
