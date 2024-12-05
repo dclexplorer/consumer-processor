@@ -13,16 +13,20 @@ ENV TINI_VERSION v0.19.0
 ADD https://github.com/krallin/tini/releases/download/${TINI_VERSION}/tini /tini
 RUN chmod +x /tini
 
-# install dependencies
-COPY package.json /app/package.json
-COPY package-lock.json /app/package-lock.json
-RUN npm ci
-
 # build the app
 COPY . /app
+RUN npm ci
 RUN npm run build
-# remove devDependencies, keep only used dependencies
+RUN npm ci --only=production # remove devDependencies, keep only used dependencies
+
+# Move to the specific path and build crdt-runner dependencies
+WORKDIR /app/dependencies/crdt-runner
+RUN npm ci
+RUN npm run build
 RUN npm ci --only=production
+
+# Return to root app directory
+WORKDIR /app
 
 ########################## END OF BUILD STAGE ##########################
 

@@ -6,6 +6,7 @@ export interface ISNSAdapterComponent {
   // publishes a job for the queue
   publish(message: DeploymentToSqs): Promise<void>
 }
+
 export function createSnsAdapterComponent(
   components: Pick<AppComponents, 'logs'>,
   options: { snsArn: string; snsEndpoint?: string }
@@ -28,6 +29,20 @@ export function createSnsAdapterComponent(
       logger.info('Notification sent', {
         messageId: receipt.MessageId as any,
         sequenceNumber: receipt.SequenceNumber as any
+      })
+    }
+  }
+}
+
+export function createMockSnsAdapterComponent(components: Pick<AppComponents, 'logs'>): ISNSAdapterComponent {
+  const logger = components.logs.getLogger('sns')
+  let sequenceNumber = 0
+  return {
+    publish: async (_: DeploymentToSqs) => {
+      sequenceNumber++
+      // send sns
+      logger.info('Mock SNS Sent', {
+        sequenceNumber
       })
     }
   }

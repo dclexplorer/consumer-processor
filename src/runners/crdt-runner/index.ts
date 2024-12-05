@@ -24,20 +24,30 @@ export async function generateCrdt(
   try {
     const contentBaseUrl =
       data.contentServerUrls && data.contentServerUrls.length > 0
-        ? data.contentServerUrls[0] + '/contents/'
+        ? data.contentServerUrls[0] + 'contents/'
         : 'https://peer.decentraland.org/content/contents/'
 
-    await runNode(
+    const { stdout, stderr, error } = await runNode(
       components,
       ['--output-path', outputPath, '--content-base-url', contentBaseUrl, '--scene-id', entityId],
-      1000
+      60000
     )
+    logger.info('node output:')
+    logger.info(stdout)
+    logger.info(stderr)
+    if (error) {
+      throw new Error(`Error executing node crdt generator`)
+    }
 
     const outputFilePath = `${outputPath}/${entityId}.crdt`
-    await storage.storeFile(`${entityId}.crdt`, outputFilePath)
+    if (existsSync(outputFilePath)) {
+      await storage.storeFile(`${entityId}.crdt`, outputFilePath)
 
-    if (snsAdapter) {
-      await snsAdapter.publish(data)
+      if (snsAdapter) {
+        await snsAdapter.publish(data)
+      }
+    } else {
+      throw new Error(`File doesn't exists outputFilePath=${outputFilePath}`)
     }
   } catch (e) {
     logger.error(`Error ${e}`)

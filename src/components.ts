@@ -12,7 +12,7 @@ import { createLocalStorageComponent, createS3StorageComponent } from './adapter
 import { metricDeclarations } from './metrics'
 import { AppComponents, GlobalContext } from './types'
 import path from 'path'
-import { createSnsAdapterComponent } from './adapters/sns'
+import { createMockSnsAdapterComponent, createSnsAdapterComponent } from './adapters/sns'
 
 // Initialize all the components of the app
 export async function initComponents(): Promise<AppComponents> {
@@ -49,14 +49,16 @@ export async function initComponents(): Promise<AppComponents> {
   const prefixVersion = await config.getString('S3_PREFIX')
   const storage =
     bucket !== undefined && bucket !== ''
-      ? await createS3StorageComponent(bucket, s3Endpoint, prefixVersion, { logs })
+      ? await createS3StorageComponent(bucket, prefixVersion, s3Endpoint, { logs })
       : createLocalStorageComponent(path.resolve(process.cwd(), 'storage'), { logs })
 
   const runner = createRunnerComponent()
 
   const snsArn = await config.getString('SNS_ARN')
   const snsEndpoint = await config.getString('SNS_ENDPOINT')
-  const snsAdapter = snsArn ? createSnsAdapterComponent({ logs }, { snsArn, snsEndpoint: snsEndpoint }) : undefined
+  const snsAdapter = snsArn
+    ? createSnsAdapterComponent({ logs }, { snsArn, snsEndpoint: snsEndpoint })
+    : createMockSnsAdapterComponent({ logs })
 
   return {
     config,

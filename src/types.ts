@@ -29,12 +29,12 @@ export type BaseComponents = {
   runner: IRunnerComponent
   deploymentsByPointer: Emitter<Record<string /* pointer */, DeploymentToSqs>>
   storage: IStorageComponent
+  snsAdapter: ISNSAdapterComponent
 }
 
 // components used in runtime
 export type AppComponents = BaseComponents & {
   statusChecks: IBaseComponent
-  snsAdapter?: ISNSAdapterComponent
 }
 
 // components used in tests
