@@ -168,9 +168,8 @@ export function createSqsAdapter<T>(
                 queue_name: options.queueUrl
               })
               try {
-                const snsOverSqs: SNSOverSQSMessage = JSON.parse(it.Body!)
-                logger.info(`Processing job`, { id: message.id, message: snsOverSqs.Message })
-                const result = await taskRunner(JSON.parse(snsOverSqs.Message), message)
+                logger.info(`Processing job`, { id: message.id })
+                const result = await taskRunner(JSON.parse(it.Body!), message)
                 logger.info(`Processed job`, { id: message.id })
                 return { result, message }
               } catch (err: any) {
