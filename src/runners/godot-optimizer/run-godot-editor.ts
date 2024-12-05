@@ -1,33 +1,32 @@
 import { exec } from 'child_process'
 import { globSync } from 'fast-glob'
-import { existsSync } from 'fs'
-import { mkdir, rm } from 'fs/promises'
-import { AppComponents } from '../types'
+import { rm } from 'fs/promises'
+import { AppComponents } from '../../types'
 
-const outputPath = 'output'
-const explorerPath = process.env.EXPLORER_PATH || '.'
+export type GodotEditorResult = {
+  error: boolean
+  stderr: string
+  stdout: string
+}
 
-export function runGodot(
-  { logs }: Pick<AppComponents, 'logs'>,
-  extraArgs: string,
+export function runGodotEditor(
+  godotEditorPath: string,
+  cwd: string,
+  components: Pick<AppComponents, 'logs'>,
+  args: string[],
   timeout: number
-): Promise<{ error: boolean; stderr: string; stdout: string }> {
-  const logger = logs.getLogger('godot-snapshot')
+): Promise<GodotEditorResult> {
+  const logger = components.logs.getLogger('godot-editor')
 
   return new Promise(async (resolve) => {
-    if (existsSync(outputPath)) {
-      await rm(outputPath, { recursive: true, force: true })
-    }
-
-    await mkdir(outputPath, { recursive: true })
-    const command = `${explorerPath}/decentraland.godot.client.x86_64 --rendering-driver opengl3 ${extraArgs}`
+    const command = `${godotEditorPath} --rendering-driver opengl3 ${args.join(' ')}`
     logger.info(
-      `about to exec: explorerPath: ${explorerPath}, display: ${process.env.DISPLAY}, command: ${command}, timeout: ${timeout}`
+      `about to exec: godotEditorPath: ${godotEditorPath}, display: ${process.env.DISPLAY}, command: ${command}, timeout: ${timeout}`
     )
 
     let resolved = false
 
-    const childProcess = exec(command, { timeout }, (error, stdout, stderr) => {
+    const childProcess = exec(command, { cwd, timeout }, (error, stdout, stderr) => {
       if (resolved) {
         return
       }

@@ -1,14 +1,8 @@
 import { readdir, rm, writeFile } from 'fs/promises'
 import path from 'path'
-<<<<<<<< HEAD:src/runners/minimap-generator/godot_generate_scene_images.ts
 import { TaskQueueMessage } from '../../adapters/sqs'
 import { AppComponents } from '../../types'
 import { runGodot } from '../run_godot'
-========
-import { TaskQueueMessage } from '../adapters/sqs'
-import { AppComponents } from '../types'
-import { runDecentralandExplorer } from './run-decentraland-explorer'
->>>>>>>> origin/main:src/runners/godot-generate-scene-images.ts
 
 type CameraConfig = {
   position: {

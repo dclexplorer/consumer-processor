@@ -25,7 +25,7 @@ for arg in "$@"; do
     --build)
       BUILD_FLAG=true
       ;;
-    godot-runner|crdt-runner)
+    godot-runner|crdt-runner|godot-optimizer)
       RUNNER_TYPE=$arg
       ;;
     --help)
@@ -43,6 +43,8 @@ if [[ "$RUNNER_TYPE" == "godot-runner" ]]; then
   DOCKERFILE="dependencies/godot-runner/Dockerfile"
 elif [[ "$RUNNER_TYPE" == "crdt-runner" ]]; then
   DOCKERFILE="dependencies/crdt-runner/Dockerfile"
+elif [[ "$RUNNER_TYPE" == "godot-optimizer" ]]; then
+  DOCKERFILE="dependencies/godot-asset-optimizer-project/Dockerfile"
 else
   echo "Invalid runner type specified."
   usage

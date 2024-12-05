@@ -23,8 +23,6 @@
   "dependencies": {
     "@aws-sdk/client-sns": "^3.699.0",
     "@aws-sdk/client-sqs": "^3.699.0",
-    "@dcl/ecs": "^7.4.21",
-    "@dcl/js-runtime": "^7.4.21",
     "@dcl/schemas": "^7.4.1",
     "@well-known-components/env-config-provider": "^1.1.1",
     "@well-known-components/http-server": "^2.0.0",
@@ -34,8 +32,5 @@
     "@well-known-components/pushable-channel": "^1.0.3",
     "aws-sdk": "^2.1692.0",
     "fast-glob": "^3.3.2",
-    "isolated-vm": "^5.0.1",
-    "protobufjs": "^7.4.0",
-    "source-map": "^0.7.4"
   }
 }

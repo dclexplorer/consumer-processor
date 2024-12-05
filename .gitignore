@@ -1,4 +1,10 @@
+.env
 dist/
 node_modules/
 **/.DS_Store
 coverage
+
+original-content
+godot4_editor
+storage
+temp-godot-optimizer-*

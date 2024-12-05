@@ -1,6 +1,8 @@
 import { IBaseComponent } from '@well-known-components/interfaces'
 import AWS from 'aws-sdk'
-import { readFile, writeFile } from 'fs/promises'
+import { mkdir, readFile, writeFile } from 'fs/promises'
+import path from 'path'
+import { AppComponents } from '../types'
 
 export type IStorageComponent = IBaseComponent & {
   storeFile(key: string, filePath: string): Promise<void>
@@ -8,14 +10,20 @@ export type IStorageComponent = IBaseComponent & {
 
 export async function createS3StorageComponent(
   bucketName: string,
-  endpoint: string | undefined = undefined
+  prefix: string | undefined = undefined,
+  endpoint: string | undefined = undefined,
+  components: Pick<AppComponents, 'logs'>
 ): Promise<IStorageComponent> {
   const s3 = new AWS.S3({
     endpoint,
     s3ForcePathStyle: true
   })
+  const logger = components.logs.getLogger('s3-storage')
+  const formattedPrefix = prefix ? `${prefix}/` : ''
   return {
     storeFile: async function (key: string, filePath: string) {
+      const keyWithPrefix = `${formattedPrefix}${key}`
+
       try {
         // Read file content
         const fileContent = await readFile(filePath)
@@ -23,31 +31,40 @@ export async function createS3StorageComponent(
         // Parameters for the upload
         const params = {
           Bucket: bucketName,
-          Key: key, // File name (key) in the bucket
+          Key: keyWithPrefix, // File name (key) in the bucket
           Body: fileContent // File content
         }
 
+        // TODO: add logs
         // Upload to S3
-        const result = await s3.upload(params).promise()
-        console.log('File uploaded successfully:', result)
+        await s3.upload(params).promise()
+        logger.info(`Stored file ${keyWithPrefix} in S3`)
       } catch (error) {
-        console.error('Error uploading file:', error)
+        logger.error(`Error storing file ${keyWithPrefix} in S3`)
+        logger.error(error as any)
       }
     }
   }
 }
 
-export function createLocalStorageComponent(): IStorageComponent {
+export function createLocalStorageComponent(
+  baseDir: string,
+  components: Pick<AppComponents, 'logs'>
+): IStorageComponent {
+  const logger = components.logs.getLogger('local-storage')
   return {
     storeFile: async function (key: string, filePath: string) {
       try {
         // Read file content
         const fileContent = await readFile(filePath)
 
-        await writeFile(key, fileContent)
-        console.log('File copied successfully:')
+        const dirName = path.dirname(path.join(baseDir, key))
+        await mkdir(dirName, { recursive: true })
+        await writeFile(path.join(baseDir, key), fileContent)
+        logger.info(`Stored file ${key} in local storage`)
       } catch (error) {
-        console.error('Error copying file:', error)
+        logger.error(`Error storing file ${key} in local storage`)
+        logger.error(error as any)
       }
     }
   }
