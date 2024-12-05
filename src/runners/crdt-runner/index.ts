@@ -24,7 +24,7 @@ export async function generateCrdt(
   try {
     const contentBaseUrl =
       data.contentServerUrls && data.contentServerUrls.length > 0
-        ? data.contentServerUrls[0] + 'contents/'
+        ? data.contentServerUrls[0] + '/contents/'
         : 'https://peer.decentraland.org/content/contents/'
 
     const { stdout, stderr, error } = await runNode(
