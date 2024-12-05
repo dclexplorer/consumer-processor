@@ -10,7 +10,7 @@
   "devDependencies": {
     "@dcl/eslint-config": "^2.2.1",
     "@types/node": "^20.2.5",
-    "@well-known-components/test-helpers": "^1.5.0",
+    "@well-known-components/test-helpers": "^1.5.8",
     "typescript": "^4.8.3"
   },
   "prettier": {
