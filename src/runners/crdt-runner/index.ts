@@ -8,13 +8,13 @@ import { mkdir, rm } from 'node:fs/promises'
 const outputPath = 'output'
 
 export async function generateCrdt(
-  message: DeploymentToSqs,
-  _msg: TaskQueueMessage,
-  components: Pick<AppComponents, 'logs' | 'config' | 'storage' | 'snsAdapter'>
+  components: Pick<AppComponents, 'logs' | 'config' | 'storage' | 'snsAdapter'>,
+  data: DeploymentToSqs,
+  _msg: TaskQueueMessage
 ) {
   const { logs, storage, snsAdapter } = components
   const logger = logs.getLogger('crdt-generator')
-  const entityId = message.entity.entityId
+  const entityId = data.entity.entityId
 
   if (existsSync(outputPath)) {
     await rm(outputPath, { recursive: true, force: true })
@@ -23,8 +23,8 @@ export async function generateCrdt(
 
   try {
     const contentBaseUrl =
-      message.contentServerUrls && message.contentServerUrls.length > 0
-        ? message.contentServerUrls[0] + '/contents/'
+      data.contentServerUrls && data.contentServerUrls.length > 0
+        ? data.contentServerUrls[0] + '/contents/'
         : 'https://peer.decentraland.org/content/contents/'
 
     await runNode(
@@ -37,7 +37,7 @@ export async function generateCrdt(
     await storage.storeFile(`${entityId}.crdt`, outputFilePath)
 
     if (snsAdapter) {
-      await snsAdapter.publish(message)
+      await snsAdapter.publish(data)
     }
   } catch (e) {
     logger.error(`Error ${e}`)

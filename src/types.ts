@@ -12,7 +12,6 @@ import { DeploymentToSqs } from '@dcl/schemas/dist/misc/deployments-to-sqs'
 import { IRunnerComponent } from './adapters/runner'
 import { Emitter } from 'mitt'
 import { IStorageComponent } from './adapters/storage'
-import { ISceneFetcherComponent } from './runners/crdt-runner/types'
 import { ISNSAdapterComponent } from './adapters/sns'
 
 export type GlobalContext = {
@@ -35,7 +34,6 @@ export type BaseComponents = {
 // components used in runtime
 export type AppComponents = BaseComponents & {
   statusChecks: IBaseComponent
-  sceneFetcher?: ISceneFetcherComponent
   snsAdapter?: ISNSAdapterComponent
 }
 
@@ -57,5 +55,3 @@ export type HandlerContextWithPath<
 >
 
 export type Context<Path extends string = any> = IHttpServerComponent.PathAwareContext<GlobalContext, Path>
-
-export type ProcessMethod = 'LOG' | 'GODOT_GENERATE_MAP' | 'GENERATE_CRDT_FROM_SCENE'

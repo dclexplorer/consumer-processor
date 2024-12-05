@@ -16,9 +16,6 @@
     "forceConsistentCasingInFileNames": true,
     "skipLibCheck": true,
     "noUnusedLocals": true,
-    "types": [
-      "@dcl/js-runtime",
-    ],
   },
   "include": [
     "src"

@@ -12,6 +12,7 @@ import { createLocalStorageComponent, createS3StorageComponent } from './adapter
 import { metricDeclarations } from './metrics'
 import { AppComponents, GlobalContext } from './types'
 import path from 'path'
+import { createSnsAdapterComponent } from './adapters/sns'
 
 // Initialize all the components of the app
 export async function initComponents(): Promise<AppComponents> {
@@ -53,13 +54,9 @@ export async function initComponents(): Promise<AppComponents> {
 
   const runner = createRunnerComponent()
 
-  const processMethod: ProcessMethod = ((await config.getString('PROCESS_METHOD')) as ProcessMethod) || 'LOG'
-
-  const sceneFetcher =
-    processMethod === 'GENERATE_CRDT_FROM_SCENE' ? await createSceneFetcherComponent({ config, fetch }) : undefined
-
   const snsArn = await config.getString('SNS_ARN')
-  const snsAdapter = snsArn ? createSnsAdapterComponent({ logs }, { snsArn, snsEndpoint: awsEndpoint }) : undefined
+  const snsEndpoint = await config.getString('SNS_ENDPOINT')
+  const snsAdapter = snsArn ? createSnsAdapterComponent({ logs }, { snsArn, snsEndpoint: snsEndpoint }) : undefined
 
   return {
     config,
@@ -72,7 +69,6 @@ export async function initComponents(): Promise<AppComponents> {
     runner,
     deploymentsByPointer: mitt(),
     storage,
-    sceneFetcher,
     snsAdapter
   }
 }
