@@ -4,7 +4,8 @@ import { createLoadableApisComponent } from './logic/scene-runtime/apis'
 import { createSceneComponent } from './adapters/scene'
 import yargs from 'yargs'
 import { hideBin } from 'yargs/helpers'
-import { writeFile } from 'fs/promises'
+import { mkdir, writeFile } from 'fs/promises'
+import { existsSync } from 'node:fs'
 
 // this function wires the business logic (adapters & controllers) with the components (ports)
 export async function main(program: Lifecycle.EntryPointParameters<BaseComponents>) {
@@ -39,7 +40,10 @@ export async function main(program: Lifecycle.EntryPointParameters<BaseComponent
 
   // Process arguments
   const { outputPath, sceneId, contentBaseUrl } = argv
-  logger.info('argv', { outputPath, sceneId, contentBaseUrl })
+
+  if (!existsSync(outputPath)) {
+    await mkdir(outputPath, { recursive: true })
+  }
 
   const sceneFetcher = components.sceneFetcher!
   const fetchSceneResponse = await sceneFetcher.fetchScene(contentBaseUrl, sceneId)
