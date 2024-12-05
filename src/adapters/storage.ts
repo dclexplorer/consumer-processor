@@ -10,6 +10,7 @@ export type IStorageComponent = IBaseComponent & {
 
 export async function createS3StorageComponent(
   bucketName: string,
+  prefix: string | undefined = undefined,
   endpoint: string | undefined = undefined,
   components: Pick<AppComponents, 'logs'>
 ): Promise<IStorageComponent> {
@@ -18,8 +19,11 @@ export async function createS3StorageComponent(
     s3ForcePathStyle: true
   })
   const logger = components.logs.getLogger('s3-storage')
+  const formattedPrefix = prefix ? `${prefix}/` : ''
   return {
     storeFile: async function (key: string, filePath: string) {
+      const keyWithPrefix = `${formattedPrefix}${key}`
+
       try {
         // Read file content
         const fileContent = await readFile(filePath)
@@ -27,16 +31,16 @@ export async function createS3StorageComponent(
         // Parameters for the upload
         const params = {
           Bucket: bucketName,
-          Key: key, // File name (key) in the bucket
+          Key: keyWithPrefix, // File name (key) in the bucket
           Body: fileContent // File content
         }
 
         // TODO: add logs
         // Upload to S3
         await s3.upload(params).promise()
-        logger.info(`Stored file ${key} in S3`)
+        logger.info(`Stored file ${keyWithPrefix} in S3`)
       } catch (error) {
-        logger.error(`Error storing file ${key} in S3`)
+        logger.error(`Error storing file ${keyWithPrefix} in S3`)
         logger.error(error as any)
       }
     }

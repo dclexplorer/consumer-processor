@@ -85,6 +85,7 @@ export async function godotOptimizer(
     // Store the report and the zip file in S3
     const s3ReportFilePath = `${entity.entity.entityId}-report.json`
     const s3ZipFilePath = `${entity.entity.entityId}.zip`
+
     await components.storage.storeFile(s3ReportFilePath, reportFilePath)
     if (zipFilePath) {
       await components.storage.storeFile(s3ZipFilePath, zipFilePath)

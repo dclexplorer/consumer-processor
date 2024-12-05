@@ -45,9 +45,10 @@ export async function initComponents(): Promise<AppComponents> {
 
   const bucket = await config.getString('BUCKET')
   const s3Endpoint = await config.getString('S3_ENDPOINT')
+  const prefixVersion = await config.getString('S3_PREFIX')
   const storage =
     bucket !== undefined && bucket !== ''
-      ? await createS3StorageComponent(bucket, s3Endpoint, { logs })
+      ? await createS3StorageComponent(bucket, s3Endpoint, prefixVersion, { logs })
       : createLocalStorageComponent(path.resolve(process.cwd(), 'storage'), { logs })
 
   const runner = createRunnerComponent()
