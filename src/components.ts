@@ -35,15 +35,20 @@ export async function initComponents(): Promise<AppComponents> {
   }
 
   const sqsQueue = await config.getString('TASK_QUEUE')
+  const prioritySqsQueue = await config.getString('PRIORITY_TASK_QUEUE')
   const taskQueue = sqsQueue
-    ? createSqsAdapter<DeploymentToSqs>({ logs, metrics }, { queueUrl: sqsQueue, queueRegion: AWS_REGION })
+    ? createSqsAdapter<DeploymentToSqs>(
+        { logs, metrics },
+        { queueUrl: sqsQueue, priorityQueueUrl: prioritySqsQueue, queueRegion: AWS_REGION }
+      )
     : createMemoryQueueAdapter<DeploymentToSqs>({ logs, metrics }, { queueName: 'ConversionTaskQueue' })
 
   const bucket = await config.getString('BUCKET')
-  const awsEndpoint = await config.getString('AWS_ENDPOINT')
+  const s3Endpoint = await config.getString('S3_ENDPOINT')
+  const prefixVersion = await config.getString('S3_PREFIX')
   const storage =
     bucket !== undefined && bucket !== ''
-      ? await createS3StorageComponent(bucket, awsEndpoint, { logs })
+      ? await createS3StorageComponent(bucket, s3Endpoint, prefixVersion, { logs })
       : createLocalStorageComponent(path.resolve(process.cwd(), 'storage'), { logs })
 
   const runner = createRunnerComponent()
