@@ -383,8 +383,21 @@ async function processOptimizer(
   // 10) remove from the zip the files that are not needed ???
   // TODO: it's not necessary since the loading avoid replace the existing files (project.binary, etc)
 
-  // Copy the zip to the output folder
-  await fs.copyFile(outputFilePath, path.join(state.tempDir, scene.id + '-mobile.zip'))
+  
+  const dependenciesGodotArgs = ['--headless', '--rendering-driver', 'opengl3', '--resize_images', `${maxImageSize}`]
+  const dependenciesResult = await runGodotEditor(
+    godotExecutable,
+    godotProjectPath,
+    components,
+    dependenciesGodotArgs,
+    importTimeout
+  )
+  if (dependenciesResult.error) {
+    state.errors.push(`Dependencies failed: ${dependenciesResult.error}`)
+  }
+  // state.dependenciesResult = dependenciesResult
+
+
 
   state.fatalError = false
   return outputFilePath
