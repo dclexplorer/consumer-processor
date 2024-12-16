@@ -452,7 +452,7 @@ async function processOptimizer(
   // bai......ext1.zip
 
   
-  // Approach #3
+  // Approach #4
   // gltfs
   // bai......unce1.zip
   // bai......unce2.zip
@@ -463,7 +463,9 @@ async function processOptimizer(
   // bai......ext2.zip
   // bai......dep2.zip
   // bai......ext3.zip
-  // bai......dep3.zips
+  // bai......dep3.zip
+
+  // res://content/hash
 
 
   // unzip output file
