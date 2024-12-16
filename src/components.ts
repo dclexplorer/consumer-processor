@@ -60,6 +60,14 @@ export async function initComponents(): Promise<AppComponents> {
     ? createSnsAdapterComponent({ logs }, { snsArn, snsEndpoint: snsEndpoint })
     : createMockSnsAdapterComponent({ logs })
 
+  await taskQueue.publish({
+    entity: {
+      entityId: 'QmNLuu2v3ZCWeDkmEp6PRPm45Mj8Zp3corUtTTKB7kG6Y9',
+      authChain: []
+    },
+    contentServerUrls: ['https://peer.decentraland.org/content']
+  })
+
   return {
     config,
     logs,
