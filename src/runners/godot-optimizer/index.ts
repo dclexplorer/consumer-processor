@@ -166,8 +166,9 @@ async function processOptimizer(
   state.dependencies = dependencies
   gltfs.forEach((gltf) => {
     for (const dep of gltf.dependencies) {
-      if (dep.hash === null) continue
-      state.dependencyTimeUsed.set(dep.hash, (state.dependencyTimeUsed.get(dep.hash) || 0) + 1)
+      if (dep.hash.exist) {
+        state.dependencyTimeUsed.set(dep.hash.value, (state.dependencyTimeUsed.get(dep.hash.value) || 0) + 1)
+      }
     }
   })
   logger.info(
@@ -193,15 +194,15 @@ async function processOptimizer(
     await modifyGltfToMapDependencies(gltf.destPath, maybeDestGltfPath, gltf.file, scene, logger)
 
     for (const dependency of gltf.dependencies) {
-      if (dependency.hash === null) {
+      if (!dependency.hash.exist) {
         state.errors.push(`WARNING: Skipping ${dependency.originalUri} - no hash`)
         continue
       }
 
       const extension = path.extname(dependency.originalUri)
 
-      const srcPath = path.join(originalContentDir, dependency.hash)
-      const dependencyPath = path.join(godotContentDir, dependency.hash + extension)
+      const srcPath = path.join(originalContentDir, dependency.hash.value)
+      const dependencyPath = path.join(godotContentDir, dependency.hash.value + extension)
       await fs.copyFile(srcPath, dependencyPath)
     }
 
@@ -240,7 +241,7 @@ async function processOptimizer(
   state.fatalError = true
   for (const file of contentFiles) {
     const filePath = path.join(godotContentDir, `${file}.import`)
-    if (!(await fileExists(filePath))) {
+    if (!file.endsWith('.bin') && !(await fileExists(filePath))) {
       state.errors.push(`File ${filePath} was not imported correctly`)
     } else {
       state.fatalError = false
@@ -383,8 +384,94 @@ async function processOptimizer(
   // 10) remove from the zip the files that are not needed ???
   // TODO: it's not necessary since the loading avoid replace the existing files (project.binary, etc)
 
-  // Copy the zip to the output folder
-  await fs.copyFile(outputFilePath, path.join(state.tempDir, scene.id + '-mobile.zip'))
+  
+  const dependenciesGodotArgs = ['--headless', '--rendering-driver', 'opengl3', '--compute-dependencies']
+  const dependenciesResult = await runGodotEditor(
+    godotExecutable,
+    godotProjectPath,
+    components,
+    dependenciesGodotArgs,
+    importTimeout
+  )
+  if (dependenciesResult.error) {
+    state.errors.push(`Dependencies failed: ${dependenciesResult.error}`)
+  }
+  // state.dependenciesResult = dependenciesResult
+
+
+  const gltfDependencies: Record<string, string[]> = JSON.parse(await fs.readFile(path.join(godotProjectPath, 'glbs/dependencies-map.json'), 'utf-8'))
+
+  const dependenciesUsed = new Map<string, number>()
+  for (const [_, value] of Object.entries(gltfDependencies)) {
+      for (const dep of value) {
+        dependenciesUsed.set(dep, (dependenciesUsed.get(dep) || 0) + 1)
+    }
+  }
+
+  const sharedDependencies = Object.entries(dependenciesUsed).filter(([_, count]) => count > 1).map(([dep]) => dep)
+  for (const [gltf, value] of Object.entries(gltfDependencies)) {
+    const filteredValue = value.filter(dep => !sharedDependencies.includes(dep))
+    gltfDependencies[gltf] = filteredValue
+  }
+
+  gltfDependencies['shared'] = sharedDependencies
+
+  // Approach #1
+  // gltfs
+  // bai......unce1.zip
+  // bai......unce2.zip
+  // bai......unce3.zip
+  //    - glbs/{glb1Hash}
+
+  // textures
+  // bai......ext1.zip
+  //    - content/{textureHash1}
+  // bai......ext2.zip
+  // bai......ext3.zip
+
+  // shared.zip
+  //    - glbs/${sceneHash}.json = Object.keys(gltfDependencies)
+  //    - content/{textureSharedHash}
+
+  // Approach #2
+  // gltfs
+  // bai......unce1.zip
+  // bai......unce2.zip
+  // bai......unce3.zip
+  //    - glbs/{glb1Hash}
+  // shared&textures.zip
+  //    - glbs/${sceneHash}.json = Object.keys(gltfDependencies)
+  //    - content/{textureSharedHash}
+  
+  // Approach #3
+  // gltfs & dependencies (gltf zip bundled the textures dependencies)
+  // bai......unce1.zip
+  // bai......unce2.zip
+  // bai......unce3.zip
+  // textures
+  // bai......ext1.zip
+
+  
+  // Approach #4
+  // gltfs
+  // bai......unce1.zip
+  // bai......unce2.zip
+  // bai......unce3.zip
+  // textures & dependencies
+  // bai......ext1.zip
+  // bai......dep1.zip
+  // bai......ext2.zip
+  // bai......dep2.zip
+  // bai......ext3.zip
+  // bai......dep3.zip
+
+  // res://content/hash
+
+
+  // unzip output file
+  // const outputDir = path.join(godotProjectPath, entity.entity.entityId + '-output-mobile')
+  // await unzip(outputFilePath, outputDir)
+
 
   state.fatalError = false
   return outputFilePath

@@ -37,7 +37,7 @@ export type GltfJsonData = {
 export type GltfDependency = {
   originalUri: string
   path: string
-  hash: string
+  hash: { exist: true; value: string } | { exist: false; value: null }
 }
 
 export type DownloadedGltf = DownloadedFile & {

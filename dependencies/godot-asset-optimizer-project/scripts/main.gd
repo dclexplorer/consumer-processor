@@ -1,32 +1,10 @@
 extends Node
 
-
-func get_texture_files() -> Array[String]:
-	var texture_files: Array[String] = []
-	
-	# Get directory access
-	var dir = DirAccess.open("res://content")
-	if dir:
-		# List all files
-		dir.list_dir_begin()
-		var file_name = dir.get_next()
-		
-		while file_name != "":
-			if !dir.current_is_dir():
-				# Check if file ends with .glb (case insensitive)
-				if file_name.to_lower().ends_with(".jpg") or file_name.to_lower().ends_with(".png") or file_name.to_lower().ends_with(".jpeg"):
-					texture_files.append(file_name)
-			file_name = dir.get_next()
-		
-		dir.list_dir_end()
-		
-	return texture_files
-
-func get_glb_files() -> Array[String]:
+func get_files(base_folder: String, extensions: Array[String]) -> Array[String]:
 	var glb_files: Array[String] = []
 	
 	# Get directory access
-	var dir = DirAccess.open("res://content")
+	var dir = DirAccess.open(base_folder)
 	if dir:
 		# List all files
 		dir.list_dir_begin()
@@ -35,13 +13,26 @@ func get_glb_files() -> Array[String]:
 		while file_name != "":
 			if !dir.current_is_dir():
 				# Check if file ends with .glb (case insensitive)
-				if file_name.to_lower().ends_with(".glb"):
-					glb_files.append(file_name)
+				if not extensions.is_empty(): 
+					var file_extension = file_name.to_lower().get_extension()
+					if extensions.has(file_extension):
+						glb_files.append(file_name)
+						
 			file_name = dir.get_next()
 		
 		dir.list_dir_end()
 		
 	return glb_files
+	
+
+func get_texture_files() -> Array[String]:
+	return get_files("res://content", ["jpg", "png", "jpeg"])
+
+func get_glb_files() -> Array[String]:
+	return get_files("res://content", ["glb", "gltf"])
+
+func get_glb_tscn_files() -> Array[String]:
+	return get_files("res://glbs", ["tscn"])
 
 
 func set_new_owner(node, new_owner) -> void:
@@ -101,6 +92,7 @@ func _ready() -> void:
 	var cmd_args = OS.get_cmdline_args()
 	var glbs = cmd_args.find("--glbs")
 	var resize_images = cmd_args.find("--resize_images")
+	var compute_dependencies = cmd_args.find("--compute-dependencies")
 	
 	if resize_images != -1:
 		print("resize_images", resize_images)
@@ -162,6 +154,20 @@ func _ready() -> void:
 		get_tree().quit(0)
 		return
 		
+	if compute_dependencies != -1:
+		print("computing dependencies")
+		var dependencies = {}
+		var tscn_files: Array[String] = get_glb_tscn_files()
+		
+		for file in tscn_files:
+			dependencies[file] = ResourceLoader.get_dependencies("res://glbs/" + file)
+			
+		var output_path = "res://glbs/dependencies-map.json"
+		var f = FileAccess.open(output_path, FileAccess.WRITE)
+		f.store_string(JSON.stringify(dependencies))
+		f.close()
+		get_tree().quit(0)
+		return
 
 	print("nothing to do")
 	get_tree().quit(0)
