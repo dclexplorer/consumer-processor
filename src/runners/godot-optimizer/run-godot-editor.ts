@@ -60,3 +60,26 @@ export function runGodotEditor(
     }, timeout + 5_000)
   })
 }
+
+export function cleanZipFileFromGodotGarbage(zipFilePath: string): void {
+  const filesToRemove = ['project.binary', '.godot/global_script_class_cache.cfg', '.godot/uid_cache.bin']
+  // Construct the `zip -d` command
+  const files = filesToRemove.map((file) => `"${file}"`).join(' ')
+  const command = `zip -d ${zipFilePath} ${files}`
+
+  console.log(`Executing command: ${command}`)
+
+  // Execute the command
+  exec(command, (error, stdout, stderr) => {
+    if (error) {
+      console.error('Error executing command:', error.message)
+      return
+    }
+
+    // Log the command output
+    if (stdout) console.log('Command Output:', stdout)
+    if (stderr) console.error('Command Errors:', stderr)
+
+    console.log('Files removed successfully.')
+  })
+}

@@ -15,3 +15,12 @@ export async function dirExists(dir: string): Promise<boolean> {
     return false
   }
 }
+
+export function removeExtension(filePath: string): string {
+  const lastDotIndex = filePath.lastIndexOf('.')
+  // If there's no dot or the dot is part of the path, return the original string
+  if (lastDotIndex === -1 || filePath.lastIndexOf('/') > lastDotIndex) {
+    return filePath
+  }
+  return filePath.substring(0, lastDotIndex)
+}

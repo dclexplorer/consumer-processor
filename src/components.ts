@@ -62,7 +62,7 @@ export async function initComponents(): Promise<AppComponents> {
 
   await taskQueue.publish({
     entity: {
-      entityId: 'QmNLuu2v3ZCWeDkmEp6PRPm45Mj8Zp3corUtTTKB7kG6Y9',
+      entityId: 'QmZLx1TAYTDSScLYXy4oyAPuXLXMYaA4f5wWKKbA9srgTz',
       authChain: []
     },
     contentServerUrls: ['https://peer.decentraland.org/content']

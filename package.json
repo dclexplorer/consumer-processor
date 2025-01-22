@@ -21,6 +21,7 @@
     "tabWidth": 2
   },
   "dependencies": {
+    "@aws-sdk/client-s3": "^3.726.1",
     "@aws-sdk/client-sns": "^3.699.0",
     "@aws-sdk/client-sqs": "^3.699.0",
     "@dcl/schemas": "^7.4.1",

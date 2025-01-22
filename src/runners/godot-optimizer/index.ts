@@ -4,10 +4,10 @@ import path from 'path'
 import { TaskQueueMessage } from '../../adapters/sqs'
 import { AppComponents } from '../../types'
 import { getAllGltfsWithDependencies, getAllTextures, getEntityDefinition } from './asset-optimizer'
-import { dirExists, fileExists } from './fs-helper'
+import { dirExists, fileExists, removeExtension } from './fs-helper'
 import { modifyGltfToMapDependencies } from './gltf'
-import { GodotEditorResult, runGodotEditor } from './run-godot-editor'
-import { DownloadedFile, DownloadedGltfWithDependencies } from './types'
+import { cleanZipFileFromGodotGarbage, GodotEditorResult, runGodotEditor } from './run-godot-editor'
+import { DownloadedFile, DownloadedGltfWithDependencies, FileKeyAndPath } from './types'
 
 type GodotOptimizerState = {
   // Once we have the data to process, the conversion could be total or partial
@@ -24,7 +24,7 @@ type GodotOptimizerState = {
   resizeResult: GodotEditorResult | null
   convertionResult: GodotEditorResult | null
   reimportResult: GodotEditorResult | null
-  exportResult: GodotEditorResult | null
+  exportResult: GodotEditorResult[] | null
   fatalError: boolean
 
   tempDir: string
@@ -39,6 +39,11 @@ export async function godotOptimizer(
   maxImageSize: number = 512
 ): Promise<void> {
   const logger = components.logs.getLogger('godot-optimizer')
+  const tempBaseDir = path.join(process.cwd(), 'temp')
+  const exists = await dirExists(tempBaseDir)
+  if (!exists) {
+    await fs.mkdir(tempBaseDir)
+  }
   const state: GodotOptimizerState = {
     errors: [],
     gltfs: [],
@@ -50,17 +55,17 @@ export async function godotOptimizer(
     resizeResult: null,
     convertionResult: null,
     reimportResult: null,
-    exportResult: null,
+    exportResult: [],
     fatalError: false,
-    tempDir: await fs.mkdtemp(path.join(process.cwd(), 'temp-godot-optimizer-')),
+    tempDir: tempBaseDir, // await fs.mkdtemp(path.join(process.cwd(), 'temp', 'temp-godot-optimizer-')),
     startedAt: new Date(),
     finishedAt: null
   }
 
-  let zipFilePath: string | null = null
+  let files: FileKeyAndPath[] | null = null
 
   try {
-    zipFilePath = await processOptimizer(state, entity, components, maxImageSize)
+    files = await processOptimizer(state, entity, components, maxImageSize)
   } catch (error) {
     const logger = components.logs.getLogger('godot-optimizer')
     logger.error(`Error processing job ${entity.entity.entityId}`)
@@ -84,11 +89,10 @@ export async function godotOptimizer(
 
     // Store the report and the zip file in S3
     const s3ReportFilePath = `${entity.entity.entityId}-report.json`
-    const s3ZipFilePath = `${entity.entity.entityId}.zip`
-
     await components.storage.storeFile(s3ReportFilePath, reportFilePath)
-    if (zipFilePath) {
-      await components.storage.storeFile(s3ZipFilePath, zipFilePath)
+
+    if (files) {
+      await components.storage.storeFiles(files)
       logger.info(`Stored zip file and report for job ${entity.entity.entityId} in S3`)
     } else {
       logger.info(`Stored only report for job ${entity.entity.entityId} in S3`)
@@ -98,9 +102,9 @@ export async function godotOptimizer(
     logger.error(error as any)
   } finally {
     // Remove the temp dir
-    if (state.tempDir) {
+    /*if (state.tempDir) {
       await fs.rm(state.tempDir, { recursive: true, force: true })
-    }
+    }*/
   }
 }
 
@@ -109,7 +113,7 @@ async function processOptimizer(
   entity: DeploymentToSqs,
   components: Pick<AppComponents, 'logs' | 'config'>,
   maxImageSize?: number
-): Promise<string> {
+): Promise<FileKeyAndPath[]> {
   const logger = components.logs.getLogger('godot-optimizer')
 
   // TODO: some sceneUrns are not using the contentServerUrls, maybe it's worth to check if is retrieveable from the sceneUrl or from a content server
@@ -141,7 +145,7 @@ async function processOptimizer(
     throw new Error('Godot project path not found')
   }
 
-  // Check if `project.godot` exists, if this exists we asume is the right project
+  // Check if `project.godot` exists, if this exists we assume it's the right project
   if (!(await fileExists(path.join(originalGodotProjectPath, 'project.godot')))) {
     throw new Error('Godot project file not found')
   }
@@ -172,7 +176,9 @@ async function processOptimizer(
     }
   })
   logger.info(
-    `Found ${gltfs.length} GLTFs with ${gltfs.reduce((acc, curr) => acc + curr.dependencies.length, 0)} dependencies and ${state.dependencyTimeUsed.size} unique dependencies.`
+    `Found ${gltfs.length} GLTFs with ${gltfs.reduce((acc, curr) => acc + curr.dependencies.length, 0)} dependencies and ${
+      state.dependencyTimeUsed.size
+    } unique dependencies.`
   )
 
   // Remove .godot folder
@@ -200,7 +206,6 @@ async function processOptimizer(
       }
 
       const extension = path.extname(dependency.originalUri)
-
       const srcPath = path.join(originalContentDir, dependency.hash.value)
       const dependencyPath = path.join(godotContentDir, dependency.hash.value + extension)
       await fs.copyFile(srcPath, dependencyPath)
@@ -210,9 +215,8 @@ async function processOptimizer(
   }
 
   for (const texture of textures) {
-    const extension = path.extname(texture.file)
     const srcPath = path.join(originalContentDir, texture.hash)
-    const dependencyPath = path.join(godotContentDir, texture.hash + extension)
+    const dependencyPath = path.join(godotContentDir, `${texture.hash}.${texture.fileExtension}`)
     await fs.copyFile(srcPath, dependencyPath)
   }
 
@@ -266,7 +270,6 @@ async function processOptimizer(
   }
 
   // 5) Then we convert all the imported gltfs and glb to .tscn files
-
   const convertionGodotArgs = ['--headless', '--rendering-driver', 'opengl3', '--glbs']
   const convertionResult = await runGodotEditor(
     godotExecutable,
@@ -279,7 +282,6 @@ async function processOptimizer(
 
   state.fatalError = true
   for (const file of contentFiles) {
-    // Check if is a gltf or glb and then check if exists the right .tscn
     if (file.endsWith('.glb') || file.endsWith('.gltf')) {
       const hashFile = file.replace('.glb', '').replace('.gltf', '')
       const tscnFilePath = path.join(godotGlbScenesDir, `${hashFile}.tscn`)
@@ -303,7 +305,8 @@ async function processOptimizer(
       file.toLowerCase().endsWith('.gltf') ||
       file.toLowerCase().endsWith('.import')
     ) {
-      await fs.unlink(path.join(godotContentDir, file))
+      const fileToRemove = path.join(godotContentDir, file)
+      await fs.unlink(fileToRemove)
     }
   }
 
@@ -311,7 +314,6 @@ async function processOptimizer(
 
   // 7) Then we reimport all the .tscn files to the godot project
   const reimportGodotArgs = ['--editor', '--import', '--headless', '--rendering-driver', 'opengl3']
-
   const reimportResult = await runGodotEditor(
     godotExecutable,
     godotProjectPath,
@@ -321,16 +323,29 @@ async function processOptimizer(
   )
   state.reimportResult = reimportResult
 
-  // TODO: could we check if every GLTF was converted correctly?
-
   // Add the remaps for existing textures and dependencies
   const remapped = [...textures, ...dependencies]
   for (const file of remapped) {
     const remapPath = path.join(godotContentDir, file.hash + '.remap')
-    const extension = path.extname(file.file)
-    const remapContent = `[remap]\n\npath="res://${file.hash}${extension}"\n`
+    const extension = file.fileExtension
+    const remapContent = `[remap]\n\npath="res://${file.hash}.${extension}"\n`
     await fs.writeFile(remapPath, remapContent)
   }
+
+  // 8) Map dependencies to only use what are needed
+  const dependenciesGodotArgs = ['--headless', '--rendering-driver', 'opengl3', '--compute-dependencies']
+  const dependenciesResult = await runGodotEditor(
+    godotExecutable,
+    godotProjectPath,
+    components,
+    dependenciesGodotArgs,
+    importTimeout
+  )
+  if (dependenciesResult.error) {
+    state.errors.push(`Dependencies failed: ${dependenciesResult.error}`)
+  }
+  const dependenciesPath = path.join(godotProjectPath, 'glbs/dependencies-map.json')
+  const gltfDependencies: Record<string, string[]> = JSON.parse(await fs.readFile(dependenciesPath, 'utf-8'))
 
   // 8) Prepare export_presets.cfg to only export the needed files
   const firstPosition = 'export_files='
@@ -341,24 +356,91 @@ async function processOptimizer(
   const exportPresetsContent = await fs.readFile(exportPresetsPath, 'utf-8')
 
   // Get all .tscn files from godotGlbScenesDir
-  const scenes = (await fs.readdir(godotGlbScenesDir))
+  const sceneIds = (await fs.readdir(godotGlbScenesDir))
     .filter((file) => file.endsWith('.tscn'))
-    .map((file) => `"res://glbs/${file}"`)
-    .join(',')
+    .map((file) => file.replace(/\.tscn$/, ''))
 
-  // Replace the content between firstPosition and endPosition
+  const outputFilePaths: FileKeyAndPath[] = []
+
+  // 9) Export each scene to a zip file
+  for (const sceneId of sceneIds) {
+    const scenePath = `"res://glbs/${sceneId}.tscn"`
+    const dependencies = gltfDependencies[`${sceneId}.tscn`].map((s) => `"${s}"`)
+    const remapDependencies = gltfDependencies[`${sceneId}.tscn`].map((s) => `"${removeExtension(s)}.remap"`)
+    const includedResources = [scenePath, ...dependencies, ...remapDependencies].join(',')
+
+    await exportResource(
+      `${sceneId}-mobile.zip`,
+      includedResources,
+      godotProjectPath,
+      exportPresetsPath,
+      exportPresetsContent,
+      godotExecutable,
+      importTimeout,
+      firstPosition,
+      endPosition,
+      components,
+      state,
+      outputFilePaths
+    )
+  }
+
+  // 10) Export each individual texture to a zip file
+  for (const texture of textures) {
+    const { file, hash, fileExtension } = texture
+    const resourcePath = `"res://content/${hash}.${fileExtension}","res://content/${hash}.remap"`
+
+    logger.log(`Texture export: ${resourcePath} ${file} ${hash}`)
+
+    await exportResource(
+      `${hash}-mobile.zip`,
+      resourcePath,
+      godotProjectPath,
+      exportPresetsPath,
+      exportPresetsContent,
+      godotExecutable,
+      importTimeout,
+      firstPosition,
+      endPosition,
+      components,
+      state,
+      outputFilePaths
+    )
+  }
+
+  state.fatalError = false
+  return outputFilePaths
+}
+
+// ChatGPT please DO: Split code-block inside this FOR in another function
+async function exportResource(
+  fileName: string,
+  includedResources: string,
+  godotProjectPath: string,
+  exportPresetsPath: string,
+  exportPresetsContent: string,
+  godotExecutable: string,
+  importTimeout: number,
+  firstPosition: string,
+  endPosition: string,
+  components: Pick<AppComponents, 'logs' | 'config'>,
+  state: GodotOptimizerState,
+  outputFilePaths: FileKeyAndPath[]
+): Promise<void> {
+  const logger = components.logs.getLogger('godot-optimizer')
+
   const startIndex = exportPresetsContent.indexOf(firstPosition) + firstPosition.length
   const endIndex = exportPresetsContent.indexOf(endPosition)
+  logger.info(`includedResources: ${includedResources}`)
+
   const newContent =
     exportPresetsContent.substring(0, startIndex) +
-    `PackedStringArray(${scenes})\n` +
+    `PackedStringArray(${includedResources})\n` +
     exportPresetsContent.substring(endIndex)
 
-  // Write the modified content back to the file
   await fs.writeFile(exportPresetsPath, newContent)
 
-  // 9) Then we export the godot project to a zip file
-  const outputFilePath = path.join(godotProjectPath, entity.entity.entityId + '-output-mobile.zip')
+  const outputFilePath = path.join(godotProjectPath, fileName)
   const exportGodotArgs = [
     '--editor',
     '--headless',
@@ -377,102 +459,14 @@ async function processOptimizer(
     exportGodotArgs,
     importTimeout
   )
-  state.exportResult = exportResult
 
-  // TODO: check if all the files were exported correctly
+  cleanZipFileFromGodotGarbage(outputFilePath)
 
-  // 10) remove from the zip the files that are not needed ???
-  // TODO: it's not necessary since the loading avoid replace the existing files (project.binary, etc)
+  state.exportResult?.push(exportResult)
 
-  
-  const dependenciesGodotArgs = ['--headless', '--rendering-driver', 'opengl3', '--compute-dependencies']
-  const dependenciesResult = await runGodotEditor(
-    godotExecutable,
-    godotProjectPath,
-    components,
-    dependenciesGodotArgs,
-    importTimeout
-  )
-  if (dependenciesResult.error) {
-    state.errors.push(`Dependencies failed: ${dependenciesResult.error}`)
-  }
-  // state.dependenciesResult = dependenciesResult
-
-
-  const gltfDependencies: Record<string, string[]> = JSON.parse(await fs.readFile(path.join(godotProjectPath, 'glbs/dependencies-map.json'), 'utf-8'))
-
-  const dependenciesUsed = new Map<string, number>()
-  for (const [_, value] of Object.entries(gltfDependencies)) {
-      for (const dep of value) {
-        dependenciesUsed.set(dep, (dependenciesUsed.get(dep) || 0) + 1)
-    }
-  }
-
-  const sharedDependencies = Object.entries(dependenciesUsed).filter(([_, count]) => count > 1).map(([dep]) => dep)
-  for (const [gltf, value] of Object.entries(gltfDependencies)) {
-    const filteredValue = value.filter(dep => !sharedDependencies.includes(dep))
-    gltfDependencies[gltf] = filteredValue
-  }
-
-  gltfDependencies['shared'] = sharedDependencies
-
-  // Approach #1
-  // gltfs
-  // bai......unce1.zip
-  // bai......unce2.zip
-  // bai......unce3.zip
-  //    - glbs/{glb1Hash}
-
-  // textures
-  // bai......ext1.zip
-  //    - content/{textureHash1}
-  // bai......ext2.zip
-  // bai......ext3.zip
-
-  // shared.zip
-  //    - glbs/${sceneHash}.json = Object.keys(gltfDependencies)
-  //    - content/{textureSharedHash}
-
-  // Approach #2
-  // gltfs
-  // bai......unce1.zip
-  // bai......unce2.zip
-  // bai......unce3.zip
-  //    - glbs/{glb1Hash}
-  // shared&textures.zip
-  //    - glbs/${sceneHash}.json = Object.keys(gltfDependencies)
-  //    - content/{textureSharedHash}
-  
-  // Approach #3
-  // gltfs & dependencies (gltf zip bundled the textures dependencies)
-  // bai......unce1.zip
-  // bai......unce2.zip
-  // bai......unce3.zip
-  // textures
-  // bai......ext1.zip
-
-  
-  // Approach #4
-  // gltfs
-  // bai......unce1.zip
-  // bai......unce2.zip
-  // bai......unce3.zip
-  // textures & dependencies
-  // bai......ext1.zip
-  // bai......dep1.zip
-  // bai......ext2.zip
-  // bai......dep2.zip
-  // bai......ext3.zip
-  // bai......dep3.zip
-
-  // res://content/hash
-
-
-  // unzip output file
-  // const outputDir = path.join(godotProjectPath, entity.entity.entityId + '-output-mobile')
-  // await unzip(outputFilePath, outputDir)
-
-
-  state.fatalError = false
-  return outputFilePath
+  logger.info(`Result: ${JSON.stringify(exportResult)}`)
+  outputFilePaths.push({
+    key: fileName,
+    filePath: outputFilePath
+  })
 }

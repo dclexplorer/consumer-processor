@@ -12,6 +12,7 @@ export type ContentItem = {
 export type DownloadedFile = ContentItem & {
   url: string
   destPath: string
+  fileExtension: string
   success: boolean
 }
 
@@ -47,3 +48,5 @@ export type DownloadedGltf = DownloadedFile & {
 export type DownloadedGltfWithDependencies = DownloadedGltf & {
   dependencies: GltfDependency[]
 }
+
+export type FileKeyAndPath = { key: string; filePath: string }

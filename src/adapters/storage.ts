@@ -1,11 +1,12 @@
 import { IBaseComponent } from '@well-known-components/interfaces'
-import AWS from 'aws-sdk'
+import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3'
 import { mkdir, readFile, writeFile } from 'fs/promises'
 import path from 'path'
 import { AppComponents } from '../types'
 
 export type IStorageComponent = IBaseComponent & {
   storeFile(key: string, filePath: string): Promise<void>
+  storeFiles(files: { key: string; filePath: string }[]): Promise<void>
 }
 
 export async function createS3StorageComponent(
@@ -14,33 +15,51 @@ export async function createS3StorageComponent(
   endpoint: string | undefined = undefined,
   components: Pick<AppComponents, 'logs'>
 ): Promise<IStorageComponent> {
-  const s3 = new AWS.S3({
+  const s3Client = new S3Client({
     endpoint,
-    s3ForcePathStyle: true
+    forcePathStyle: true
   })
   const logger = components.logs.getLogger('s3-storage')
   const formattedPrefix = prefix ? `${prefix}/` : ''
+
   return {
     storeFile: async function (key: string, filePath: string) {
       const keyWithPrefix = `${formattedPrefix}${key}`
 
       try {
-        // Read file content
         const fileContent = await readFile(filePath)
-
-        // Parameters for the upload
-        const params = {
+        const command = new PutObjectCommand({
           Bucket: bucketName,
-          Key: keyWithPrefix, // File name (key) in the bucket
-          Body: fileContent // File content
-        }
+          Key: keyWithPrefix,
+          Body: fileContent
+        })
 
-        // TODO: add logs
-        // Upload to S3
-        await s3.upload(params).promise()
+        await s3Client.send(command)
         logger.info(`Stored file ${keyWithPrefix} in S3`)
       } catch (error) {
         logger.error(`Error storing file ${keyWithPrefix} in S3`)
+        logger.error(error as any)
+      }
+    },
+
+    storeFiles: async function (files: { key: string; filePath: string }[]) {
+      try {
+        const uploadPromises = files.map(async ({ key, filePath }) => {
+          const keyWithPrefix = `${formattedPrefix}${key}`
+          const fileContent = await readFile(filePath)
+          const command = new PutObjectCommand({
+            Bucket: bucketName,
+            Key: keyWithPrefix,
+            Body: fileContent
+          })
+
+          return s3Client.send(command)
+        })
+
+        await Promise.all(uploadPromises)
+        logger.info(`Stored ${files.length} files in S3`)
+      } catch (error) {
+        logger.error(`Error storing multiple files in S3`)
         logger.error(error as any)
       }
     }
@@ -55,9 +74,7 @@ export function createLocalStorageComponent(
   return {
     storeFile: async function (key: string, filePath: string) {
       try {
-        // Read file content
         const fileContent = await readFile(filePath)
-
         const dirName = path.dirname(path.join(baseDir, key))
         await mkdir(dirName, { recursive: true })
         await writeFile(path.join(baseDir, key), fileContent)
@@ -65,6 +82,12 @@ export function createLocalStorageComponent(
       } catch (error) {
         logger.error(`Error storing file ${key} in local storage`)
         logger.error(error as any)
+      }
+    },
+
+    storeFiles: async function (files: { key: string; filePath: string }[]) {
+      for (const { key, filePath } of files) {
+        await this.storeFile(key, filePath)
       }
     }
   }
