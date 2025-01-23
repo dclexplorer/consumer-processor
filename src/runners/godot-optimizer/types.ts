@@ -49,4 +49,4 @@ export type DownloadedGltfWithDependencies = DownloadedGltf & {
   dependencies: GltfDependency[]
 }
 
-export type FileKeyAndPath = { key: string; filePath: string }
+export type FileKeyAndPath = { key: string; originalHash: string; filePath: string }

@@ -156,13 +156,17 @@ func _ready() -> void:
 		
 	if compute_dependencies != -1:
 		print("computing dependencies")
+		if compute_dependencies + 1 >= cmd_args.size():
+			printerr("--compute_dependencies passed without any other parameter, e.g. --compute_dependencies glbs/dependencies-map.json")
+			get_tree().quit(-1)
+
+		var output_path = "res://%s" % [cmd_args[compute_dependencies + 1]]
 		var dependencies = {}
 		var tscn_files: Array[String] = get_glb_tscn_files()
 		
 		for file in tscn_files:
 			dependencies[file] = ResourceLoader.get_dependencies("res://glbs/" + file)
 			
-		var output_path = "res://glbs/dependencies-map.json"
 		var f = FileAccess.open(output_path, FileAccess.WRITE)
 		f.store_string(JSON.stringify(dependencies))
 		f.close()

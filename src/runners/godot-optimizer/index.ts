@@ -159,9 +159,10 @@ async function processOptimizer(
 
   // 1) First we fetch the entity definition to get the pointers
   logger.info(`Fetching entity definition for ${entity.entity.entityId}`)
+  const sceneId = entity.entity.entityId
   const scene = await getEntityDefinition(entity.entity.entityId, contentBaseUrl)
   logger.info(
-    `Fetched entity definition for ${scene.id} with contentBaseUrl ${contentBaseUrl} holding ${scene.pointers.length} pointers`
+    `Fetched entity definition for ${sceneId} with contentBaseUrl ${contentBaseUrl} holding ${scene.pointers.length} pointers`
   )
 
   // 2) Then we download all the gltfs with their dependencies
@@ -328,12 +329,20 @@ async function processOptimizer(
   for (const file of remapped) {
     const remapPath = path.join(godotContentDir, file.hash + '.remap')
     const extension = file.fileExtension
-    const remapContent = `[remap]\n\npath="res://${file.hash}.${extension}"\n`
+    const remapContent = `[remap]\n\npath="res://content/${file.hash}.${extension}"\n`
     await fs.writeFile(remapPath, remapContent)
   }
 
   // 8) Map dependencies to only use what are needed
-  const dependenciesGodotArgs = ['--headless', '--rendering-driver', 'opengl3', '--compute-dependencies']
+  const dependenciesRelativePath = `glbs/${sceneId}-dependencies-map.json`
+
+  const dependenciesGodotArgs = [
+    '--headless',
+    '--rendering-driver',
+    'opengl3',
+    '--compute-dependencies',
+    dependenciesRelativePath
+  ]
   const dependenciesResult = await runGodotEditor(
     godotExecutable,
     godotProjectPath,
@@ -344,7 +353,8 @@ async function processOptimizer(
   if (dependenciesResult.error) {
     state.errors.push(`Dependencies failed: ${dependenciesResult.error}`)
   }
-  const dependenciesPath = path.join(godotProjectPath, 'glbs/dependencies-map.json')
+
+  const dependenciesPath = path.join(godotProjectPath, dependenciesRelativePath)
   const gltfDependencies: Record<string, string[]> = JSON.parse(await fs.readFile(dependenciesPath, 'utf-8'))
 
   // 8) Prepare export_presets.cfg to only export the needed files
@@ -356,21 +366,21 @@ async function processOptimizer(
   const exportPresetsContent = await fs.readFile(exportPresetsPath, 'utf-8')
 
   // Get all .tscn files from godotGlbScenesDir
-  const sceneIds = (await fs.readdir(godotGlbScenesDir))
+  const glbSceneIds = (await fs.readdir(godotGlbScenesDir))
     .filter((file) => file.endsWith('.tscn'))
     .map((file) => file.replace(/\.tscn$/, ''))
 
   const outputFilePaths: FileKeyAndPath[] = []
 
   // 9) Export each scene to a zip file
-  for (const sceneId of sceneIds) {
-    const scenePath = `"res://glbs/${sceneId}.tscn"`
-    const dependencies = gltfDependencies[`${sceneId}.tscn`].map((s) => `"${s}"`)
-    const remapDependencies = gltfDependencies[`${sceneId}.tscn`].map((s) => `"${removeExtension(s)}.remap"`)
+  for (const glbSceneId of glbSceneIds) {
+    const scenePath = `"res://glbs/${glbSceneId}.tscn"`
+    const dependencies = gltfDependencies[`${glbSceneId}.tscn`].map((s) => `"${s}"`)
+    const remapDependencies = gltfDependencies[`${glbSceneId}.tscn`].map((s) => `"${removeExtension(s)}.remap"`)
     const includedResources = [scenePath, ...dependencies, ...remapDependencies].join(',')
 
     await exportResource(
-      `${sceneId}-mobile.zip`,
+      glbSceneId,
       includedResources,
       godotProjectPath,
       exportPresetsPath,
@@ -393,7 +403,7 @@ async function processOptimizer(
     logger.log(`Texture export: ${resourcePath} ${file} ${hash}`)
 
     await exportResource(
-      `${hash}-mobile.zip`,
+      hash,
       resourcePath,
       godotProjectPath,
       exportPresetsPath,
@@ -408,13 +418,41 @@ async function processOptimizer(
     )
   }
 
+  // 11) Export scene metadata file
+
+  // Save metadata
+  const hashes = outputFilePaths.map((v) => v.originalHash)
+  const metadataPath = path.join(godotProjectPath, `${sceneId}-optimized.json`)
+  const metadata = {
+    optimizedContent: hashes
+  }
+  const jsonString = JSON.stringify(metadata)
+  await fs.writeFile(metadataPath, jsonString)
+
+  // Export metadata and dependencies map
+  const resourcePath = `"res://glbs/${sceneId}-dependencies-map.json","res://${sceneId}-optimized.json"`
+
+  await exportResource(
+    sceneId,
+    resourcePath,
+    godotProjectPath,
+    exportPresetsPath,
+    exportPresetsContent,
+    godotExecutable,
+    importTimeout,
+    firstPosition,
+    endPosition,
+    components,
+    state,
+    outputFilePaths
+  )
+
   state.fatalError = false
   return outputFilePaths
 }
 
-// ChatGPT please DO: Split code-block inside this FOR in another function
 async function exportResource(
-  fileName: string,
+  hash: string,
   includedResources: string,
   godotProjectPath: string,
   exportPresetsPath: string,
@@ -427,6 +465,7 @@ async function exportResource(
   state: GodotOptimizerState,
   outputFilePaths: FileKeyAndPath[]
 ): Promise<void> {
+  const fileName = `${hash}-mobile.zip`
   const logger = components.logs.getLogger('godot-optimizer')
 
   const startIndex = exportPresetsContent.indexOf(firstPosition) + firstPosition.length
@@ -467,6 +506,7 @@ async function exportResource(
   logger.info(`Result: ${JSON.stringify(exportResult)}`)
   outputFilePaths.push({
     key: fileName,
+    originalHash: hash,
     filePath: outputFilePath
   })
 }
