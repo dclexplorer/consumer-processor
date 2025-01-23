@@ -3,6 +3,7 @@ import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3'
 import { mkdir, readFile, writeFile } from 'fs/promises'
 import path from 'path'
 import { AppComponents } from '../types'
+import { AwsCredentialIdentity } from '@smithy/types'
 
 export type IStorageComponent = IBaseComponent & {
   storeFile(key: string, filePath: string): Promise<void>
@@ -13,11 +14,13 @@ export async function createS3StorageComponent(
   bucketName: string,
   prefix: string | undefined = undefined,
   endpoint: string | undefined = undefined,
+  credentials: AwsCredentialIdentity | undefined = undefined,
   components: Pick<AppComponents, 'logs'>
 ): Promise<IStorageComponent> {
   const s3Client = new S3Client({
     endpoint,
-    forcePathStyle: true
+    forcePathStyle: true,
+    credentials
   })
   const logger = components.logs.getLogger('s3-storage')
   const formattedPrefix = prefix ? `${prefix}/` : ''

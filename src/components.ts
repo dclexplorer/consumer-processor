@@ -13,6 +13,7 @@ import { metricDeclarations } from './metrics'
 import { AppComponents, GlobalContext } from './types'
 import path from 'path'
 import { createMockSnsAdapterComponent, createSnsAdapterComponent } from './adapters/sns'
+import { AwsCredentialIdentity } from '@smithy/types'
 
 // Initialize all the components of the app
 export async function initComponents(): Promise<AppComponents> {
@@ -47,9 +48,19 @@ export async function initComponents(): Promise<AppComponents> {
   const bucket = await config.getString('BUCKET')
   const s3Endpoint = await config.getString('S3_ENDPOINT')
   const prefixVersion = await config.getString('S3_PREFIX')
+
+  const s3AccessKeyId = await config.getString('S3_ACCESS_KEY_ID')
+  const s3SecretAccessKey = await config.getString('S3_SECRET_ACCESS_KEY')
+  const s3Credentials: AwsCredentialIdentity | undefined =
+    s3AccessKeyId && s3SecretAccessKey
+      ? {
+          accessKeyId: s3AccessKeyId,
+          secretAccessKey: s3SecretAccessKey
+        }
+      : undefined
   const storage =
     bucket !== undefined && bucket !== ''
-      ? await createS3StorageComponent(bucket, prefixVersion, s3Endpoint, { logs })
+      ? await createS3StorageComponent(bucket, prefixVersion, s3Endpoint, s3Credentials, { logs })
       : createLocalStorageComponent(path.resolve(process.cwd(), 'storage'), { logs })
 
   const runner = createRunnerComponent()
