@@ -1,6 +1,6 @@
 FROM quay.io/decentraland/godot-explorer:4f93d5c591dea36da17d70721a7ae1524fbdd79a
 
-RUN apt-get update && apt-get upgrade -y
+RUN apt-get update
 RUN apt-get install -y ca-certificates tini
 
 # Install node
