@@ -82,20 +82,13 @@ export function createMemoryQueueAdapter<T>(
   }
 }
 
-export async function createSqsAdapter<T>(
-  components: Pick<AppComponents, 'logs' | 'metrics' | 'config'>,
+export function createSqsAdapter<T>(
+  components: Pick<AppComponents, 'logs' | 'metrics'>,
   options: { queueUrl: string; priorityQueueUrl?: string; queueRegion?: string }
-): Promise<ITaskQueue<T>> {
-  const accessKeyId = await components.config.requireString('AWS_ACCESS_KEY_ID')
-  const secretAccessKey = await components.config.requireString('AWS_SECRET_ACCESS_KEY')
-
+): ITaskQueue<T> {
   const logger = components.logs.getLogger(options.queueUrl)
   const sqs = new SQSClient({
-    region: options.queueRegion,
-    credentials: {
-      accessKeyId,
-      secretAccessKey
-    }
+    region: options.queueRegion
   })
 
   async function receiveMessage(quantityOfMessages: number): Promise<{ response: any | undefined; queueUsed: string }> {

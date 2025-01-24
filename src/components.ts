@@ -33,10 +33,7 @@ export async function initComponents(): Promise<AppComponents> {
   const sqsQueue = await config.getString('TASK_QUEUE')
   const prioritySqsQueue = await config.getString('PRIORITY_TASK_QUEUE')
   const taskQueue = sqsQueue
-    ? await createSqsAdapter<DeploymentToSqs>(
-        { logs, metrics, config },
-        { queueUrl: sqsQueue, priorityQueueUrl: prioritySqsQueue }
-      )
+    ? createSqsAdapter<DeploymentToSqs>({ logs, metrics }, { queueUrl: sqsQueue, priorityQueueUrl: prioritySqsQueue })
     : createMemoryQueueAdapter<DeploymentToSqs>({ logs, metrics }, { queueName: 'ConversionTaskQueue' })
 
   const bucket = await config.getString('BUCKET')
