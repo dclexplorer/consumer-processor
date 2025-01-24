@@ -3,7 +3,6 @@ import { createDotEnvConfigComponent } from '@well-known-components/env-config-p
 import { createServerComponent, createStatusCheckComponent } from '@well-known-components/http-server'
 import { createLogComponent } from '@well-known-components/logger'
 import { createMetricsComponent, instrumentHttpServerWithMetrics } from '@well-known-components/metrics'
-import AWS from 'aws-sdk'
 import mitt from 'mitt'
 import { createFetchComponent } from './adapters/fetch'
 import { createRunnerComponent } from './adapters/runner'
@@ -31,17 +30,12 @@ export async function initComponents(): Promise<AppComponents> {
 
   await instrumentHttpServerWithMetrics({ metrics, server, config })
 
-  const AWS_REGION = await config.getString('AWS_REGION')
-  if (AWS_REGION) {
-    AWS.config.update({ region: AWS_REGION })
-  }
-
   const sqsQueue = await config.getString('TASK_QUEUE')
   const prioritySqsQueue = await config.getString('PRIORITY_TASK_QUEUE')
   const taskQueue = sqsQueue
-    ? createSqsAdapter<DeploymentToSqs>(
-        { logs, metrics },
-        { queueUrl: sqsQueue, priorityQueueUrl: prioritySqsQueue, queueRegion: AWS_REGION }
+    ? await createSqsAdapter<DeploymentToSqs>(
+        { logs, metrics, config },
+        { queueUrl: sqsQueue, priorityQueueUrl: prioritySqsQueue }
       )
     : createMemoryQueueAdapter<DeploymentToSqs>({ logs, metrics }, { queueName: 'ConversionTaskQueue' })
 
@@ -58,6 +52,7 @@ export async function initComponents(): Promise<AppComponents> {
           secretAccessKey: s3SecretAccessKey
         }
       : undefined
+
   const storage =
     bucket !== undefined && bucket !== ''
       ? await createS3StorageComponent(bucket, prefixVersion, s3Endpoint, s3Credentials, { logs })
@@ -71,13 +66,13 @@ export async function initComponents(): Promise<AppComponents> {
     ? createSnsAdapterComponent({ logs }, { snsArn, snsEndpoint: snsEndpoint })
     : createMockSnsAdapterComponent({ logs })
 
-  await taskQueue.publish({
+  /*await taskQueue.publish({
     entity: {
       entityId: 'QmZLx1TAYTDSScLYXy4oyAPuXLXMYaA4f5wWKKbA9srgTz',
       authChain: []
     },
     contentServerUrls: ['https://peer.decentraland.org/content']
-  })
+  })*/
 
   return {
     config,
