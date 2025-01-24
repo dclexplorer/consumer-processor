@@ -1,4 +1,5 @@
-import fs from 'fs/promises'
+import fs, { readdir } from 'fs/promises'
+import { join } from 'path'
 
 export async function fileExists(file: string): Promise<boolean> {
   try {
@@ -23,4 +24,17 @@ export function removeExtension(filePath: string): string {
     return filePath
   }
   return filePath.substring(0, lastDotIndex)
+}
+
+export async function listFilesInFolder(folderPath: string): Promise<string[]> {
+  try {
+    const entries = await readdir(folderPath, { withFileTypes: true })
+    const files = entries
+      .filter((entry) => entry.isFile()) // Filter out only files
+      .map((file) => join(folderPath, file.name)) // Map to full paths
+    return files
+  } catch (error) {
+    console.error(`Error reading folder: ${folderPath}`, error)
+    throw error
+  }
 }
