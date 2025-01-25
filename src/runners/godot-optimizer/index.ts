@@ -442,7 +442,7 @@ async function processOptimizer(
   await fs.writeFile(metadataPath, jsonString)
 
   // Export metadata and dependencies map
-  const resourcePath = `"res://glbs/${sceneId}-dependencies-map.json","res://${sceneId}-optimized.json"`
+  const resourcePath = `"res://${sceneId}-optimized.json"`
 
   await exportResource(
     sceneId,
