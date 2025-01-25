@@ -358,9 +358,6 @@ async function processOptimizer(
   const gltfDependencies: Record<string, string[]> = JSON.parse(await fs.readFile(dependenciesPath, 'utf-8'))
 
   // 8) Prepare export_presets.cfg to only export the needed files
-  const firstPosition = 'export_files='
-  const endPosition = 'include_filter='
-
   // Read export_presets.cfg
   const exportPresetsPath = path.join(godotProjectPath, 'export_presets.cfg')
   const exportPresetsContent = await fs.readFile(exportPresetsPath, 'utf-8')
@@ -372,27 +369,43 @@ async function processOptimizer(
 
   const outputFilePaths: FileKeyAndPath[] = []
 
+  const externalSceneDependencies: Record<string, string[]> = {}
+
   // 9) Export each scene to a zip file
   for (const glbSceneId of glbSceneIds) {
     const scenePath = `"res://glbs/${glbSceneId}.tscn"`
     const dependencies = gltfDependencies[`${glbSceneId}.tscn`].map((s) => `"${s}"`)
     const remapDependencies = gltfDependencies[`${glbSceneId}.tscn`].map((s) => `"${removeExtension(s)}.remap"`)
-    const includedResources = [scenePath, ...dependencies, ...remapDependencies].join(',')
+    const sceneDependencies = [...dependencies, ...remapDependencies]
+
+    // remove external dependencies on the export
+    const internalSceneDependencies = sceneDependencies.filter((s) => s.includes(glbSceneId))
+    const includedResources = [scenePath, ...internalSceneDependencies].join(',')
+
+    // get external dependencies
+    const externalDependencies = dependencies
+      .filter((m) => !m.includes(glbSceneId))
+      .map((m) => {
+        const fileName = m.split('/').pop() || ''
+        return fileName.split('.').shift() || ''
+      })
+
+    const excludeResources = externalDependencies.map((s) => `*${s}*`).join(',')
 
     await exportResource(
       glbSceneId,
       includedResources,
-      godotProjectPath,
-      exportPresetsPath,
+      excludeResources,
       exportPresetsContent,
+      godotProjectPath,
       godotExecutable,
       importTimeout,
-      firstPosition,
-      endPosition,
       components,
       state,
       outputFilePaths
     )
+
+    externalSceneDependencies[glbSceneId] = externalDependencies
   }
 
   // 10) Export each individual texture to a zip file
@@ -405,13 +418,11 @@ async function processOptimizer(
     await exportResource(
       hash,
       resourcePath,
-      godotProjectPath,
-      exportPresetsPath,
+      '', // no excluded resources
       exportPresetsContent,
+      godotProjectPath,
       godotExecutable,
       importTimeout,
-      firstPosition,
-      endPosition,
       components,
       state,
       outputFilePaths
@@ -424,7 +435,8 @@ async function processOptimizer(
   const hashes = outputFilePaths.map((v) => v.originalHash)
   const metadataPath = path.join(godotProjectPath, `${sceneId}-optimized.json`)
   const metadata = {
-    optimizedContent: hashes
+    optimizedContent: hashes,
+    externalSceneDependencies
   }
   const jsonString = JSON.stringify(metadata)
   await fs.writeFile(metadataPath, jsonString)
@@ -435,13 +447,11 @@ async function processOptimizer(
   await exportResource(
     sceneId,
     resourcePath,
-    godotProjectPath,
-    exportPresetsPath,
+    '', // no exlude resources
     exportPresetsContent,
+    godotProjectPath,
     godotExecutable,
     importTimeout,
-    firstPosition,
-    endPosition,
     components,
     state,
     outputFilePaths
@@ -454,29 +464,27 @@ async function processOptimizer(
 async function exportResource(
   hash: string,
   includedResources: string,
-  godotProjectPath: string,
-  exportPresetsPath: string,
+  excludeResources: string,
   exportPresetsContent: string,
+  godotProjectPath: string,
   godotExecutable: string,
   importTimeout: number,
-  firstPosition: string,
-  endPosition: string,
   components: Pick<AppComponents, 'logs' | 'config'>,
   state: GodotOptimizerState,
   outputFilePaths: FileKeyAndPath[]
 ): Promise<void> {
+  const exportPresetsPath = path.join(godotProjectPath, 'export_presets.cfg')
   const fileName = `${hash}-mobile.zip`
   const logger = components.logs.getLogger('godot-optimizer')
 
-  const startIndex = exportPresetsContent.indexOf(firstPosition) + firstPosition.length
-  const endIndex = exportPresetsContent.indexOf(endPosition)
   logger.info(`includedResources: ${includedResources}`)
 
-  const newContent =
-    exportPresetsContent.substring(0, startIndex) +
-    `PackedStringArray(${includedResources})\n` +
-    exportPresetsContent.substring(endIndex)
+  // Replace the "export_files" and "exclude_filter" line
+  const newContent = exportPresetsContent
+    .replace(/export_files=.*\n/, `export_files=PackedStringArray(${includedResources})\n`)
+    .replace(/exclude_filter=.*\n/, `exclude_filter="${excludeResources}"\n`)
 
+  // Write the updated content back to the file
   await fs.writeFile(exportPresetsPath, newContent)
 
   const outputFilePath = path.join(godotProjectPath, fileName)
