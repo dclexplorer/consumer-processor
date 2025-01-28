@@ -46,34 +46,47 @@ export async function createS3StorageComponent(
     },
 
     storeFiles: async function (files: { key: string; filePath: string }[]) {
-      const results = await Promise.allSettled(
-        files.map(async ({ key, filePath }) => {
-          const keyWithPrefix = `${formattedPrefix}${key}`
-          const fileContent = await readFile(filePath)
-          const command = new PutObjectCommand({
-            Bucket: bucketName,
-            Key: keyWithPrefix,
-            Body: fileContent
-          })
+      for (const { key, filePath } of files) {
+        const keyWithPrefix = `${formattedPrefix}${key}`
+        let attempt = 0
+        let success = false
 
-          return s3Client.send(command)
-        })
-      )
+        while (attempt < 3 && !success) {
+          try {
+            // Read the file content
+            const fileContent = await readFile(filePath)
 
-      results.forEach((result, index) => {
-        if (result.status === 'rejected') {
-          logger.error(`Error storing file ${files[index].key}: ${result.reason}`)
-        } else {
-          logger.info(`Successfully stored file ${files[index].key}`)
+            // Create and send the S3 command
+            const command = new PutObjectCommand({
+              Bucket: bucketName,
+              Key: keyWithPrefix,
+              Body: fileContent
+            })
+
+            await s3Client.send(command)
+
+            // If the command succeeds, log the success and exit the retry loop
+            logger.info(`Successfully stored file ${keyWithPrefix} in S3`)
+            success = true
+          } catch (error) {
+            attempt++
+
+            if (attempt < 3) {
+              logger.warn(`Attempt ${attempt} failed for file ${keyWithPrefix}. Retrying...`)
+            } else {
+              logger.error(`Failed to store file ${keyWithPrefix} after 3 attempts`)
+              logger.error(error as any)
+            }
+          }
         }
-      })
 
-      const failed = results.filter((r) => r.status === 'rejected').length
-      if (failed > 0) {
-        throw new Error(`${failed} file(s) failed to store`)
+        // If all attempts fail, throw an error to terminate the process
+        if (!success) {
+          throw new Error(`Failed to store file ${keyWithPrefix} after 3 attempts`)
+        }
       }
 
-      logger.info(`Successfully stored ${files.length - failed} files in S3`)
+      logger.info(`Successfully stored all ${files.length} files in S3`)
     }
   }
 }
