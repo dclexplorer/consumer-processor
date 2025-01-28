@@ -46,8 +46,8 @@ export async function createS3StorageComponent(
     },
 
     storeFiles: async function (files: { key: string; filePath: string }[]) {
-      try {
-        const uploadPromises = files.map(async ({ key, filePath }) => {
+      const results = await Promise.allSettled(
+        files.map(async ({ key, filePath }) => {
           const keyWithPrefix = `${formattedPrefix}${key}`
           const fileContent = await readFile(filePath)
           const command = new PutObjectCommand({
@@ -58,13 +58,22 @@ export async function createS3StorageComponent(
 
           return s3Client.send(command)
         })
+      )
 
-        await Promise.all(uploadPromises)
-        logger.info(`Stored ${files.length} files in S3`)
-      } catch (error) {
-        logger.error(`Error storing multiple files in S3`)
-        logger.error(error as any)
+      results.forEach((result, index) => {
+        if (result.status === 'rejected') {
+          logger.error(`Error storing file ${files[index].key}: ${result.reason}`)
+        } else {
+          logger.info(`Successfully stored file ${files[index].key}`)
+        }
+      })
+
+      const failed = results.filter((r) => r.status === 'rejected').length
+      if (failed > 0) {
+        throw new Error(`${failed} file(s) failed to store`)
       }
+
+      logger.info(`Successfully stored ${files.length - failed} files in S3`)
     }
   }
 }
