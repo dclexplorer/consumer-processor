@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # Define pointers as a space-separated list
-POINTERS="14,10"
+POINTERS="0,0"
 
 # Convert pointers into JSON array format
 POINTERS_JSON=$(printf '"%s",' $POINTERS | sed 's/,$//')
