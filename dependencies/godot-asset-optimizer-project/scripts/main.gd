@@ -96,12 +96,14 @@ func _ready() -> void:
 	
 	if resize_images != -1:
 		print("resize_images", resize_images)
-		if resize_images + 1 >= cmd_args.size():
-			printerr("--resize_images passed without any other parameter, e.g. --resize 512")
+		if resize_images + 2 >= cmd_args.size():
+			printerr("--resize_images passed without any other parameter, e.g. --resize 512 original-size-path.json")
 			get_tree().quit(-1)
 			
 		var max_size = float(cmd_args[resize_images + 1])
+		var output_path = "res://%s" % [cmd_args[resize_images + 2]]
 		var textures_files: Array[String] = get_texture_files()
+		var original_sizes = {}
 		for texture_path in textures_files:
 			var img := Image.load_from_file("res://content/" + texture_path)
 			if img == null:
@@ -110,6 +112,9 @@ func _ready() -> void:
 
 			var image_width := float(img.get_width())
 			var image_height := float(img.get_height())
+			var texture_hash = texture_path.get_basename()
+			original_sizes[texture_hash] = {"width": image_width , "height": image_height}
+
 			var size = max(image_height, image_width)
 			if size <= max_size:
 				prints("skipping texture", texture_path)
@@ -125,7 +130,10 @@ func _ready() -> void:
 				img.save_png("res://content/" + texture_path)
 			elif texture_path.to_lower().ends_with(".jpg") or texture_path.to_lower().ends_with(".jpeg"):
 				img.save_jpg("res://content/" + texture_path)
-	
+
+		var f = FileAccess.open(output_path, FileAccess.WRITE)
+		f.store_string(JSON.stringify(original_sizes))
+		f.close()
 		get_tree().quit(0)
 		return
 		

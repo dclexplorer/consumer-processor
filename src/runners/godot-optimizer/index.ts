@@ -8,6 +8,7 @@ import { dirExists, fileExists, removeExtension } from '../../fs-helper'
 import { modifyGltfToMapDependencies } from './gltf'
 import { GodotEditorResult, runGodotEditor } from './run-godot-editor'
 import { DownloadedFile, DownloadedGltfWithDependencies, FileKeyAndPath } from './types'
+import { getFileSizeAsync } from './file-format'
 
 type GodotOptimizerState = {
   // Once we have the data to process, the conversion could be total or partial
@@ -258,8 +259,16 @@ async function processOptimizer(
   }
 
   // 4.1) Resize all the texture files
+  const originalSizesRelativePath = `${sceneId}-original-sizes.json`
   if (maxImageSize !== undefined) {
-    const resizeGodotArgs = ['--headless', '--rendering-driver', 'opengl3', '--resize_images', `${maxImageSize}`]
+    const resizeGodotArgs = [
+      '--headless',
+      '--rendering-driver',
+      'opengl3',
+      '--resize_images',
+      `${maxImageSize}`,
+      `${originalSizesRelativePath}`
+    ]
     const resizeResult = await runGodotEditor(
       godotExecutable,
       godotProjectPath,
@@ -430,13 +439,24 @@ async function processOptimizer(
   }
 
   // 11) Export scene metadata file
+  const originalSizesPath = path.join(godotProjectPath, originalSizesRelativePath)
+  const originalSizes: Record<string, string[]> = JSON.parse(await fs.readFile(originalSizesPath, 'utf-8'))
 
   // Save metadata
   const hashes = outputFilePaths.map((v) => v.originalHash)
+  const hashSizeMap: Record<string, number> = outputFilePaths.reduce(
+    (acc, file) => {
+      acc[file.originalHash] = file.size
+      return acc
+    },
+    {} as Record<string, number>
+  )
   const metadataPath = path.join(godotProjectPath, `${sceneId}-optimized.json`)
   const metadata = {
     optimizedContent: hashes,
-    externalSceneDependencies
+    externalSceneDependencies,
+    originalSizes,
+    hashSizeMap
   }
   const jsonString = JSON.stringify(metadata)
   await fs.writeFile(metadataPath, jsonString)
@@ -515,6 +535,7 @@ async function exportResource(
   outputFilePaths.push({
     key: fileName,
     originalHash: hash,
-    filePath: outputFilePath
+    filePath: outputFilePath,
+    size: await getFileSizeAsync(outputFilePath)
   })
 }

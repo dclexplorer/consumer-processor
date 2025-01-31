@@ -1,4 +1,4 @@
-import fs from 'fs/promises'
+import fs, { stat } from 'fs/promises'
 import path from 'path'
 
 type ImageFormat = 'png' | 'svg' | 'jpeg' | 'gif' | 'unknown'
@@ -74,4 +74,14 @@ export function isImageFormat(filePath: string): boolean {
   const extension = path.extname(filePath).toLowerCase().slice(1) // Remove leading dot
   const imageFormats = ['png', 'svg', 'jpeg', 'jpg', 'gif']
   return imageFormats.includes(extension)
+}
+
+export async function getFileSizeAsync(filePath: string): Promise<number> {
+  try {
+    const stats = await stat(filePath)
+    return stats.size
+  } catch (error) {
+    console.error('Error reading file:', error)
+    return -1
+  }
 }
