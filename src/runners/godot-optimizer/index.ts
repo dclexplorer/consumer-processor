@@ -6,7 +6,7 @@ import { AppComponents } from '../../types'
 import { getAllGltfsWithDependencies, getAllTextures, getEntityDefinition } from './asset-optimizer'
 import { dirExists, fileExists, removeExtension } from '../../fs-helper'
 import { modifyGltfToMapDependencies } from './gltf'
-import { cleanZipFileFromGodotGarbage, GodotEditorResult, runGodotEditor } from './run-godot-editor'
+import { GodotEditorResult, runGodotEditor } from './run-godot-editor'
 import { DownloadedFile, DownloadedGltfWithDependencies, FileKeyAndPath } from './types'
 
 type GodotOptimizerState = {
@@ -507,7 +507,7 @@ async function exportResource(
     importTimeout
   )
 
-  cleanZipFileFromGodotGarbage(outputFilePath)
+  //cleanZipFileFromGodotGarbage(outputFilePath)
 
   state.exportResult?.push(exportResult)
 
