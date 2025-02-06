@@ -12,7 +12,8 @@ export type ContentItem = {
 export type DownloadedFile = ContentItem & {
   url: string
   destPath: string
-  fileExtension: string
+  detectedFormat: string
+  originalFileExtension: string
   success: boolean
 }
 

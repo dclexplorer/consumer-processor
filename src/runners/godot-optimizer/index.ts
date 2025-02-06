@@ -218,7 +218,7 @@ async function processOptimizer(
 
   for (const texture of textures) {
     const srcPath = path.join(originalContentDir, texture.hash)
-    const dependencyPath = path.join(godotContentDir, `${texture.hash}.${texture.fileExtension}`)
+    const dependencyPath = path.join(godotContentDir, `${texture.hash}.${texture.detectedFormat}`)
     await fs.copyFile(srcPath, dependencyPath)
   }
 
@@ -337,9 +337,14 @@ async function processOptimizer(
   const remapped = [...textures, ...dependencies]
   for (const file of remapped) {
     const remapPath = path.join(godotContentDir, file.hash + '.remap')
-    const extension = file.fileExtension
+    const extension = file.detectedFormat
     const remapContent = `[remap]\n\npath="res://content/${file.hash}.${extension}"\n`
     await fs.writeFile(remapPath, remapContent)
+
+    if (file.detectedFormat !== file.originalFileExtension) {
+      const remapPath = path.join(godotContentDir, `${file.hash}.${file.originalFileExtension}.remap`)
+      await fs.writeFile(remapPath, remapContent)
+    }
   }
 
   // 8) Map dependencies to only use what are needed
@@ -419,8 +424,12 @@ async function processOptimizer(
 
   // 10) Export each individual texture to a zip file
   for (const texture of textures) {
-    const { file, hash, fileExtension } = texture
-    const resourcePath = `"res://content/${hash}.${fileExtension}","res://content/${hash}.remap"`
+    const { file, hash, detectedFormat, originalFileExtension } = texture
+    let resourcePath = `"res://content/${hash}.${detectedFormat}","res://content/${hash}.remap"`
+
+    if (detectedFormat !== originalFileExtension) {
+      resourcePath += `,"res://content/${hash}.${originalFileExtension}.remap"`
+    }
 
     logger.log(`Texture export: ${resourcePath} ${file} ${hash}`)
 

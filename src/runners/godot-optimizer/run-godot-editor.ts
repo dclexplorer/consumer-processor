@@ -1,4 +1,4 @@
-import { exec } from 'child_process'
+import { exec, ExecException } from 'child_process'
 import { globSync } from 'fast-glob'
 import { rm } from 'fs/promises'
 import { AppComponents } from '../../types'
@@ -26,60 +26,96 @@ export function runGodotEditor(
 
     let resolved = false
 
-    const childProcess = exec(command, { cwd, timeout }, (error, stdout, stderr) => {
-      if (resolved) {
-        return
-      }
-
-      if (error) {
-        for (const f of globSync('core.*')) {
-          rm(f).catch(logger.error)
+    // Execute the command via exec (which spawns a shell)
+    const childProcess = exec(
+      command,
+      { cwd, timeout } as any,
+      (error: ExecException | null, stdout: string, stderr: string) => {
+        if (resolved) return
+        clearTimeout(timeoutHandler)
+        if (error) {
+          for (const f of globSync('core.*')) {
+            rm(f).catch(logger.error)
+          }
+          resolved = true
+          return resolve({ error: true, stdout, stderr })
         }
         resolved = true
-        return resolve({ error: true, stdout, stderr })
+        resolve({ error: false, stdout, stderr })
       }
-      resolved = true
-      resolve({ error: false, stdout, stderr })
-    })
+    )
 
+    // Let the child process run independently.
+    childProcess.unref()
+
+    // Save the child's PID.
     const childProcessPid = childProcess.pid
 
+    // Helper: Kill all processes whose command line matches the Godot editor binary.
+    const killProcessTree = () => {
+      // Using pkill to kill any process matching the godotEditorPath.
+      // Adjust the match pattern if needed.
+      const pkillCommand = `pkill -9 -f "${godotEditorPath}"`
+      exec(pkillCommand, (err, stdout, stderr) => {
+        if (err) {
+          // pkill returns code 1 if no process was matched; ignore that.
+          if ((err as any).code !== 1) {
+            logger.error('Error executing pkill for godot process tree', {
+              message: (err as Error).message
+            })
+          }
+        }
+      })
+    }
+
+    // Helper function to kill the process group and the process tree.
+    const killProcessGroup = () => {
+      if (childProcessPid !== undefined) {
+        try {
+          // Attempt to kill the entire process group (using a negative PID).
+          process.kill(-childProcessPid, 'SIGKILL')
+        } catch (e: unknown) {
+          if (e instanceof Error && (e as any).code === 'ESRCH') {
+            // Process group already terminated.
+          } else if (e instanceof Error) {
+            logger.error('Error when killing process group', { message: e.message })
+          } else {
+            logger.error('Error when killing process group', { error: String(e) })
+          }
+        }
+      } else {
+        logger.error('childProcess.pid is undefined; cannot kill process group')
+      }
+      // Additionally, run pkill to catch any stray Godot processes.
+      killProcessTree()
+    }
+
+    // Listen for the exit event as a backup.
+    childProcess.on('exit', (code, signal) => {
+      if (resolved) return
+      clearTimeout(timeoutHandler)
+      resolved = true
+      resolve({
+        error: code !== 0,
+        stdout: '',
+        stderr: signal ? `Process terminated with signal ${signal}` : ''
+      })
+    })
+
+    // Listen for the close event; if SIGTERM is received, kill the process group.
     childProcess.on('close', (_code, signal) => {
-      // timeout sends SIGTERM, we might want to kill it harder
       if (signal === 'SIGTERM') {
-        childProcess.kill('SIGKILL')
+        killProcessGroup()
       }
     })
 
-    setTimeout(() => {
-      exec(`kill -9 ${childProcessPid}`, () => {})
+    // Set a failsafe timeout that will kill the process group if the command hasn't finished.
+    const timeoutHandler = setTimeout(() => {
+      killProcessGroup()
       if (!resolved) {
-        resolve({ error: true, stdout: '', stderr: 'timeout' })
         resolved = true
+        resolve({ error: true, stdout: '', stderr: 'timeout' })
       }
-    }, timeout + 5_000)
-  })
-}
-
-export function cleanZipFileFromGodotGarbage(zipFilePath: string): void {
-  const filesToRemove = ['project.binary', '.godot/global_script_class_cache.cfg', '.godot/uid_cache.bin']
-  // Construct the `zip -d` command
-  const files = filesToRemove.map((file) => `"${file}"`).join(' ')
-  const command = `zip -d ${zipFilePath} ${files}`
-
-  console.log(`Executing command: ${command}`)
-
-  // Execute the command
-  exec(command, (error, stdout, stderr) => {
-    if (error) {
-      console.error('Error executing command:', error.message)
-      return
-    }
-
-    // Log the command output
-    if (stdout) console.log('Command Output:', stdout)
-    if (stderr) console.error('Command Errors:', stderr)
-
-    console.log('Files removed successfully.')
+    }, timeout + 5000)
   })
 }

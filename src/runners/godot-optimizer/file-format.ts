@@ -1,13 +1,13 @@
 import fs, { stat } from 'fs/promises'
 import path from 'path'
 
-type ImageFormat = 'png' | 'svg' | 'jpeg' | 'gif' | 'unknown'
+type ImageFormat = 'png' | 'svg' | 'jpg' | 'jpeg' | 'gif' | 'unknown'
 
 type Format = ImageFormat | string
 
-async function detectFormatByContent(filePath: string): Promise<ImageFormat> {
+async function detectFormatByContent(localFilePath: string, fileName: string): Promise<ImageFormat> {
   try {
-    const fileHandle = await fs.open(filePath, 'r')
+    const fileHandle = await fs.open(localFilePath, 'r')
     const buffer = Buffer.alloc(8) // Read up to 8 bytes (longest signature)
     await fileHandle.read(buffer, 0, 8, 0)
     await fileHandle.close()
@@ -28,7 +28,7 @@ async function detectFormatByContent(filePath: string): Promise<ImageFormat> {
 
     // Check for JPEG signature: FF D8 FF
     if (buffer[0] === 0xff && buffer[1] === 0xd8 && buffer[2] === 0xff) {
-      return 'jpeg'
+      return getExtension(fileName) === 'jpg' ? 'jpg' : 'jpeg'
     }
 
     // Check for GIF signature: GIF87a or GIF89a
@@ -56,14 +56,14 @@ async function detectFormatByContent(filePath: string): Promise<ImageFormat> {
   }
 }
 
-export async function detectFormat(filePath: string, originalPath: string): Promise<Format> {
-  const contentFormat = await detectFormatByContent(filePath)
+export async function detectFormat(localFilePath: string, fileName: string): Promise<Format> {
+  const contentFormat = await detectFormatByContent(localFilePath, fileName)
   if (contentFormat !== 'unknown') {
     return contentFormat
   }
 
   // Fallback to file extension if content detection fails
-  const extension = path.extname(originalPath).toLowerCase().replace('.', '')
+  const extension = getExtension(fileName)
   return extension || 'unknown'
 }
 
@@ -71,9 +71,13 @@ export function isImageFormat(filePath: string): boolean {
   if (!filePath) {
     return false // Handle empty or undefined filePath
   }
-  const extension = path.extname(filePath).toLowerCase().slice(1) // Remove leading dot
+  const extension = getExtension(filePath)
   const imageFormats = ['png', 'svg', 'jpeg', 'jpg', 'gif']
   return imageFormats.includes(extension)
+}
+
+export function getExtension(filePath: string): string {
+  return path.extname(filePath).toLowerCase().slice(1)
 }
 
 export async function getFileSizeAsync(filePath: string): Promise<number> {
