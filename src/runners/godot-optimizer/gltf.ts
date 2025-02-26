@@ -54,7 +54,7 @@ export function getDependencies(
   entity: Entity,
   logger: ILoggerComponent.ILogger
 ): GltfDependency[] {
-  const dependencies = []
+  const dependencies: GltfDependency[] = []
   const basePath = getBaseDir(sourcePath)
 
   function getPath(uri: string) {
@@ -77,10 +77,11 @@ export function getDependencies(
   if (gltf.images) {
     for (const image of gltf.images) {
       if (image.uri && !image.uri.startsWith('data:')) {
+        const hashValue = getHash(getPath(image.uri))
         dependencies.push({
           originalUri: image.uri,
           path: getPath(image.uri),
-          hash: getHash(getPath(image.uri)) ?? 'dummy'
+          hash: hashValue ? { exist: true, value: hashValue } : { exist: false, value: null }
         })
       }
     }
@@ -90,10 +91,11 @@ export function getDependencies(
   if (gltf.buffers) {
     for (const buffer of gltf.buffers) {
       if (buffer.uri && !buffer.uri.startsWith('data:')) {
+        const hashValue = getHash(getPath(buffer.uri))
         dependencies.push({
           originalUri: buffer.uri,
           path: getPath(buffer.uri),
-          hash: getHash(getPath(buffer.uri)) ?? 'dummy'
+          hash: hashValue ? { exist: true, value: hashValue } : { exist: false, value: null }
         })
       }
     }
@@ -139,7 +141,7 @@ export async function modifyGltfToMapDependencies(
       if (image.uri && !image.uri.startsWith('data:')) {
         const dependency = dependencies.find((d) => d.originalUri === image.uri)
         if (dependency) {
-          image.uri = dependency.hash + path.extname(dependency.originalUri)
+          image.uri = dependency.hash.value + path.extname(dependency.originalUri)
         }
       }
     }
@@ -152,7 +154,7 @@ export async function modifyGltfToMapDependencies(
       if (buffer.uri && !buffer.uri.startsWith('data:')) {
         const dependency = dependencies.find((d) => d.originalUri === buffer.uri)
         if (dependency) {
-          buffer.uri = dependency.hash
+          buffer.uri = dependency.hash.value
 
           // Update bufferView offsets if they exist
           if (newGltf.bufferViews) {

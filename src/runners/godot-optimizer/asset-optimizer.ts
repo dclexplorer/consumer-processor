@@ -5,6 +5,7 @@ import PQueue from 'p-queue'
 import path from 'path'
 import { getDependencies, openGltf } from './gltf'
 import { DownloadedFile, DownloadedGltf, DownloadedGltfWithDependencies, GltfDependency } from './types'
+import { detectFormat, getExtension, isImageFormat } from './file-format'
 
 /**
  * Get the entity definition for a list of pointers
@@ -56,7 +57,15 @@ export async function downloadFiles(
 
           if (stats.size > 0 && !override) {
             logger.debug(`Skipping ${file.url} - already exists with same size`)
-            return { ...file, success: true }
+            const detectedFormat = await detectFormat(file.destPath, file.file)
+            const originalFileExtension = getExtension(file.file)
+
+            if (detectedFormat !== originalFileExtension) {
+              logger.info(
+                `${file.file} ${file.hash} different extension orig=${originalFileExtension} vs detected=${detectedFormat}`
+              )
+            }
+            return { ...file, originalFileExtension, detectedFormat, success: true }
           }
         } catch (error) {
           // File doesn't exist, continue with download
@@ -81,7 +90,15 @@ export async function downloadFiles(
         logger.debug(`Progress: ${completed}/${total} files downloaded (${Math.round((completed / total) * 100)}%)`)
       }
 
-      return { ...file, success } satisfies DownloadedFile
+      const detectedFormat = await detectFormat(file.destPath, file.file)
+      const originalFileExtension = getExtension(file.file)
+      if (detectedFormat !== originalFileExtension) {
+        logger.info(
+          `${file.file} ${file.hash} different extension orig=${originalFileExtension} vs detected=${detectedFormat}`
+        )
+      }
+
+      return { ...file, success, detectedFormat, originalFileExtension } satisfies DownloadedFile
     })
   })
 
@@ -149,13 +166,7 @@ export async function getAllTextures(
   originalContentDir: string,
   logger: ILoggerComponent.ILogger
 ): Promise<DownloadedFile[]> {
-  const images = entity.content.filter(
-    (item) =>
-      item.file.toLowerCase().endsWith('.jpg') ||
-      item.file.toLowerCase().endsWith('.jpeg') ||
-      item.file.toLowerCase().endsWith('.png') ||
-      item.file.toLowerCase().endsWith('.gif')
-  )
+  const images = entity.content.filter((item) => isImageFormat(item.file))
 
   const imagesDownloaded = await downloadFiles(images, false, contentBaseUrl, originalContentDir, logger)
   return imagesDownloaded

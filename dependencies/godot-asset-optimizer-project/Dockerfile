@@ -1,7 +1,7 @@
 FROM ubuntu:22.04
 
-RUN apt-get update && apt-get upgrade -y
-RUN apt-get install -y ca-certificates tini unzip curl
+RUN apt-get update
+RUN apt-get install -y ca-certificates tini unzip curl libfontconfig1 zip
 
 # Install node
 RUN curl -fsSL https://deb.nodesource.com/setup_20.x  | bash - && apt-get -y install nodejs

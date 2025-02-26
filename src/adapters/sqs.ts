@@ -1,7 +1,7 @@
 import { IBaseComponent, IMetricsComponent } from '@well-known-components/interfaces'
 import { validateMetricsDeclaration } from '@well-known-components/metrics'
 import { AsyncQueue } from '@well-known-components/pushable-channel'
-import { SQS } from 'aws-sdk'
+import { SQSClient, SendMessageCommand, ReceiveMessageCommand, DeleteMessageCommand } from '@aws-sdk/client-sqs'
 import { AppComponents } from '../types'
 
 export interface TaskQueueMessage {
@@ -9,10 +9,7 @@ export interface TaskQueueMessage {
 }
 
 export interface ITaskQueue<T> {
-  // publishes a job for the queue
   publish(job: T, prioritize?: boolean): Promise<TaskQueueMessage>
-  // awaits for a job. then calls and waits for the taskRunner argument.
-  // the result is then returned to the wrapper function.
   consumeAndProcessJob<R>(
     taskRunner: (job: T, message: TaskQueueMessage) => Promise<R>
   ): Promise<{ result: R | undefined }>
@@ -90,46 +87,39 @@ export function createSqsAdapter<T>(
   options: { queueUrl: string; priorityQueueUrl?: string; queueRegion?: string }
 ): ITaskQueue<T> {
   const logger = components.logs.getLogger(options.queueUrl)
+  const sqs = new SQSClient({
+    region: options.queueRegion
+  })
 
-  const sqs = new SQS({ apiVersion: 'latest', region: options.queueRegion })
-
-  async function receiveMessage(
-    quantityOfMessages: number
-  ): Promise<{ response: (SQS.ReceiveMessageResult & { $response: any }) | undefined; queueUsed: string }> {
+  async function receiveMessage(quantityOfMessages: number): Promise<{ response: any | undefined; queueUsed: string }> {
     let response
     let queueUsed = ''
 
     if (options.priorityQueueUrl) {
-      response = await Promise.race([
-        sqs
-          .receiveMessage({
-            AttributeNames: ['SentTimestamp'],
+      try {
+        response = await sqs.send(
+          new ReceiveMessageCommand({
             MaxNumberOfMessages: quantityOfMessages,
             MessageAttributeNames: ['All'],
             QueueUrl: options.priorityQueueUrl,
             WaitTimeSeconds: 15,
-            VisibilityTimeout: 3 * 3600 // 3 hours
+            VisibilityTimeout: 3 * 3600
           })
-          .promise(),
-        timeout(30 * 60 * 1000, 'Timed out sqs.receiveMessage')
-      ])
-      queueUsed = options.priorityQueueUrl
+        )
+        queueUsed = options.priorityQueueUrl
+      } catch {}
     }
 
-    if (!response || !response?.Messages || response?.Messages?.length < 1) {
-      response = await Promise.race([
-        sqs
-          .receiveMessage({
-            AttributeNames: ['SentTimestamp'],
-            MaxNumberOfMessages: quantityOfMessages,
-            MessageAttributeNames: ['All'],
-            QueueUrl: options.queueUrl,
-            WaitTimeSeconds: 15,
-            VisibilityTimeout: 3 * 3600 // 3 hours
-          })
-          .promise(),
-        timeout(30 * 60 * 1000, 'Timed out sqs.receiveMessage')
-      ])
+    if (!response || !response.Messages || response.Messages.length < 1) {
+      response = await sqs.send(
+        new ReceiveMessageCommand({
+          MaxNumberOfMessages: quantityOfMessages,
+          MessageAttributeNames: ['All'],
+          QueueUrl: options.queueUrl,
+          WaitTimeSeconds: 15,
+          VisibilityTimeout: 3 * 3600
+        })
+      )
       queueUsed = options.queueUrl
     }
 
@@ -142,26 +132,27 @@ export function createSqsAdapter<T>(
         Message: JSON.stringify(job)
       }
 
-      const published = await sqs
-        .sendMessage({
-          QueueUrl: prioritize && options.priorityQueueUrl ? options.priorityQueueUrl : options.queueUrl,
-          MessageBody: JSON.stringify(snsOverSqs)
-        })
-        .promise()
+      const command = new SendMessageCommand({
+        QueueUrl: prioritize && options.priorityQueueUrl ? options.priorityQueueUrl : options.queueUrl,
+        MessageBody: JSON.stringify(snsOverSqs)
+      })
+
+      const published = await sqs.send(command)
 
       const m: TaskQueueMessage = { id: published.MessageId! }
 
-      logger.info(`Publishing job`, m as any)
+      logger.info(`Publishing job ${JSON.stringify(m)}`)
 
       components.metrics.increment('job_queue_enqueue_total', { queue_name: options.queueUrl })
       return m
     },
+
     async consumeAndProcessJob(taskRunner) {
       while (true) {
         try {
           const { response, queueUsed } = await receiveMessage(1)
 
-          if (!!response && response.Messages && response.Messages.length > 0) {
+          if (response && response.Messages && response.Messages.length > 0) {
             for (const it of response.Messages) {
               const message: TaskQueueMessage = { id: it.MessageId! }
               const { end } = components.metrics.startTimer('job_queue_duration_seconds', {
@@ -171,7 +162,14 @@ export function createSqsAdapter<T>(
                 logger.info(`Processing job`, { id: message.id })
                 const result = await taskRunner(JSON.parse(it.Body!), message)
                 logger.info(`Processed job`, { id: message.id })
-                await sqs.deleteMessage({ QueueUrl: queueUsed, ReceiptHandle: it.ReceiptHandle! }).promise()
+
+                await sqs.send(
+                  new DeleteMessageCommand({
+                    QueueUrl: queueUsed,
+                    ReceiptHandle: it.ReceiptHandle!
+                  })
+                )
+
                 return { result, message }
               } catch (err: any) {
                 logger.error(err)
@@ -196,8 +194,4 @@ export function createSqsAdapter<T>(
 
 export async function sleep(ms: number) {
   return new Promise<void>((ok) => setTimeout(ok, ms))
-}
-
-export async function timeout(ms: number, message: string) {
-  return new Promise<never>((_, reject) => setTimeout(() => reject(new Error(message)), ms))
 }

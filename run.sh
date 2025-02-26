@@ -41,10 +41,13 @@ done
 # Determine Dockerfile and Image name based on the runner type
 if [[ "$RUNNER_TYPE" == "godot-runner" ]]; then
   DOCKERFILE="dependencies/godot-runner/Dockerfile"
+  ENVFILE=".env.godot-runner"
 elif [[ "$RUNNER_TYPE" == "crdt-runner" ]]; then
   DOCKERFILE="dependencies/crdt-runner/Dockerfile"
+  ENVFILE=".env.crdt-runner"
 elif [[ "$RUNNER_TYPE" == "godot-optimizer" ]]; then
   DOCKERFILE="dependencies/godot-asset-optimizer-project/Dockerfile"
+  ENVFILE=".env.godot-optimizer"
 else
   echo "Invalid runner type specified."
   usage
@@ -69,10 +72,8 @@ fi
 # Run the Docker container interactively with automatic cleanup
 echo "Running the Docker container interactively..."
 docker run --rm -it \
-  -e AWS_SDK_LOAD_CONFIG=1 \
-  -e AWS_DEFAULT_REGION=us-east-1 \
-  -v ~/.aws:/root/.aws:ro \
-  --network localenv_app-network \
+  -p 8080:8080 \
+  -v $(pwd):/app/ \
   $IMAGE_NAME
 
 # Exit message

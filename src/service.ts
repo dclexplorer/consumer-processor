@@ -4,8 +4,15 @@ import { godotOptimizer } from './runners/godot-optimizer'
 import { godotGenerateSceneImages } from './runners/minimap-generator/godot-generate-scene-images'
 import { AppComponents, GlobalContext, TestComponents } from './types'
 import { generateCrdt } from './runners/crdt-runner'
+import { generateImposter } from './runners/imposter-runner'
 
-export const validProcessMethods = ['log', 'godot_minimap', 'godot_optimizer', 'generate_crdt'] as const
+export const validProcessMethods = [
+  'log',
+  'godot_minimap',
+  'godot_optimizer',
+  'generate_crdt',
+  'generate_imposters'
+] as const
 export type ProcessMethod = (typeof validProcessMethods)[number]
 
 export async function getProcessMethod(config: IConfigComponent): Promise<ProcessMethod> {
@@ -52,6 +59,9 @@ export async function main(program: Lifecycle.EntryPointParameters<AppComponents
               break
             case 'generate_crdt':
               await generateCrdt(globalContext.components, job, message)
+              break
+            case 'generate_imposters':
+              await generateImposter(globalContext.components, job, message)
               break
             case 'log':
               logger.info('Consume and Process: ', { job: JSON.stringify(job), message: JSON.stringify(message) })
