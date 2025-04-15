@@ -1,4 +1,4 @@
-FROM ubuntu:22.04
+FROM ubuntu:25.04
 
 RUN apt-get update
 RUN apt-get install -y ca-certificates tini unzip curl libfontconfig1 zip
@@ -7,14 +7,13 @@ RUN apt-get install -y ca-certificates tini unzip curl libfontconfig1 zip
 RUN curl -fsSL https://deb.nodesource.com/setup_20.x  | bash - && apt-get -y install nodejs
 
 # Install Godot
-ARG GODOT_VERSION=4.3-stable
-ARG GODOT_FILENAME=Godot_v${GODOT_VERSION}_linux.x86_64
+ARG GODOT_VERSION=4.4.1-stable
+ARG GODOT_FILENAME=godot.linux.editor.x86_64
 
-RUN curl -fsSL https://github.com/godotengine/godot/releases/download/${GODOT_VERSION}/${GODOT_FILENAME}.zip -o godot.zip && \
-    unzip godot.zip -d /usr/local/bin && \
-    rm godot.zip
+RUN curl -fsSL https://github.com/decentraland/godotengine/releases/download/${GODOT_VERSION}/${GODOT_FILENAME} -o /usr/local/bin/${GODOT_FILENAME}
+RUN chmod +x /usr/local/bin/${GODOT_FILENAME}
 
-ENV GODOT4_EDITOR /usr/local/bin/${GODOT_FILENAME}
+ENV GODOT4_EDITOR=/usr/local/bin/${GODOT_FILENAME}
 
 # Clean apt cache
 RUN rm -rf /var/lib/apt/lists/* /var/cache/apt/*
@@ -36,7 +35,7 @@ RUN npm i --global yarn
 RUN yarn --frozen-lockfile
 RUN yarn build
 
-ENV NODE_ENV production
+ENV NODE_ENV=production
 
 # Please _DO NOT_ use a custom ENTRYPOINT because it may prevent signals
 # (i.e. SIGTERM) to reach the service
