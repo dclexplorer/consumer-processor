@@ -2,37 +2,49 @@
 
 # Usage message
 usage() {
-  echo "Usage: $0 [--build] [runner-type]"
+  echo "Usage: $0 [--build] [runner-type] [--option key value]"
   echo ""
   echo "Options:"
   echo "  --build        Build the Docker image before running the container."
   echo "  runner-type    Specify the runner type ('godot-runner' or 'crdt-runner')."
+  echo "  --option key value  Forward additional options to the docker run command."
   echo ""
   echo "Examples:"
   echo "  $0 --build godot-runner"
   echo "  $0 crdt-runner --build"
-  echo "  $0 godot-runner"
+  echo "  $0 godot-runner --option key value"
   exit 1
 }
 
 # Default values
 BUILD_FLAG=false
 RUNNER_TYPE=""
+EXTRA_ARGS=()
 
 # Parse inputs
-for arg in "$@"; do
-  case $arg in
+while [[ $# -gt 0 ]]; do
+  case $1 in
     --build)
       BUILD_FLAG=true
+shift
       ;;
     godot-runner|crdt-runner|godot-optimizer)
-      RUNNER_TYPE=$arg
+      RUNNER_TYPE=$1
+      shift
       ;;
     --help)
       usage
       ;;
+--*)
+              EXTRA_ARGS+=("$1")
+if [[ $# -ge 2 && ! $2 == --* ]]; then
+        EXTRA_ARGS+=("$2")
+        shift
+      fi
+        shift
+                  ;;
     *)
-      echo "Invalid option: $arg"
+      echo "Invalid option: $1"
       usage
       ;;
   esac
@@ -71,10 +83,15 @@ fi
 
 # Run the Docker container interactively with automatic cleanup
 echo "Running the Docker container interactively..."
+echo "Entrypoint arguments: ${EXTRA_ARGS[@]}"
 docker run --rm -it \
   -p 8080:8080 \
   -v $(pwd):/app/ \
-  $IMAGE_NAME
+  "$IMAGE_NAME" \
+  "${EXTRA_ARGS[@]}" || {
+    echo "Error: Failed to run the Docker container. Check the provided arguments."
+    exit 1
+  }
 
 # Exit message
 if [ $? -eq 0 ]; then

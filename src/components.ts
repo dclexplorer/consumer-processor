@@ -14,6 +14,87 @@ import path from 'path'
 import { createMockSnsAdapterComponent, createSnsAdapterComponent } from './adapters/sns'
 import { AwsCredentialIdentity } from '@smithy/types'
 
+// Helper function to handle entityId logic
+async function handleEntityId(
+  entityId: string,
+  fetch: AppComponents['fetch'],
+  logs: AppComponents['logs'],
+  taskQueue: AppComponents['taskQueue']
+) {
+  if (entityId.includes(',')) {
+    try {
+      const response = await fetch.fetch('https://peer.decentraland.org/content/entities/active', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ pointers: [entityId] })
+      })
+
+      if (!response.ok) {
+        throw new Error(`Failed to fetch entity ID: ${response.statusText}`)
+      }
+
+      const data = await response.json()
+      const ids = data.map((entity: { id: string }) => entity.id)
+
+      if (ids.length > 0) {
+        entityId = ids[0] // Use the first ID as the entityId
+        logs.getLogger('main').log(`Resolved Entity ID from pointer: ${entityId}`)
+      } else {
+        logs.getLogger('main').error('Error: No entity ID found for the given pointer')
+      }
+    } catch (error) {
+      logs.getLogger('main').error(`Error resolving entity ID from pointer: ${error}`)
+    }
+  } else if (entityId.endsWith('.dcl.eth')) {
+    try {
+      const response = await fetch.fetch(`https://worlds-content-server.decentraland.org/world/${entityId}/about`, {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json'
+        }
+      })
+
+      if (!response.ok) {
+        throw new Error(`Failed to fetch world data: ${response.statusText}`)
+      }
+
+      const data = await response.json()
+      const urn = data.configurations?.scenesUrn?.[0]
+      if (urn) {
+        const urnParts = urn.split(':')
+        entityId = urnParts[3].split('?')[0] // Extract the entityId
+        const baseUrl = urn.split('baseUrl=')[1] // Extract the baseUrl
+        logs.getLogger('main').log(`Resolved Entity ID: ${entityId}, Base URL: ${baseUrl}`)
+
+        // Publish the resolved entityId and baseUrl
+        await taskQueue.publish({
+          entity: {
+            entityId: entityId,
+            authChain: []
+          },
+          contentServerUrls: [baseUrl]
+        })
+      } else {
+        logs.getLogger('main').error('Error: No URN found in world data')
+      }
+    } catch (error) {
+      logs.getLogger('main').error(`Error resolving entity ID from .dcl.eth domain: ${error}`)
+    }
+  } else {
+    // Publish the resolved or provided entityId
+    logs.getLogger('main').log(`Scheduled Entity ID: ${entityId}`)
+    await taskQueue.publish({
+      entity: {
+        entityId: entityId,
+        authChain: []
+      },
+      contentServerUrls: ['https://peer.decentraland.org/content']
+    })
+  }
+}
+
 // Initialize all the components of the app
 export async function initComponents(): Promise<AppComponents> {
   const config = await createDotEnvConfigComponent({ path: ['.env.default', '.env'] })
@@ -63,13 +144,15 @@ export async function initComponents(): Promise<AppComponents> {
     ? createSnsAdapterComponent({ logs }, { snsArn, snsEndpoint: snsEndpoint })
     : createMockSnsAdapterComponent({ logs })
 
-  /*await taskQueue.publish({
-    entity: {
-      entityId: 'bafkreiam23nmbv5pcjupb4hkh7uwajkqa3f7gk3msl7npik7wblbfyvhj4',
-      authChain: []
-    },
-    contentServerUrls: ['https://peer.decentraland.org/content']
-  })*/
+  const entityIdIndex = process.argv.findIndex((p) => p === '--entityId')
+  if (entityIdIndex !== -1) {
+    const entityId = process.argv[entityIdIndex + 1]
+    if (entityId) {
+      await handleEntityId(entityId, fetch, logs, taskQueue)
+    } else {
+      logs.getLogger('main').error('Error: Please provide a value for --entityId')
+    }
+  }
 
   return {
     config,

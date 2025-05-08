@@ -8,9 +8,12 @@ RUN curl -fsSL https://deb.nodesource.com/setup_20.x  | bash - && apt-get -y ins
 
 # Install Godot
 ARG GODOT_VERSION=4.4.1-stable
-ARG GODOT_FILENAME=godot.linux.editor.x86_64
+ARG GODOT_FILENAME=godot.4.4.1.stable.linux.editor.x86_64
 
-RUN curl -fsSL https://github.com/decentraland/godotengine/releases/download/${GODOT_VERSION}/${GODOT_FILENAME} -o /usr/local/bin/${GODOT_FILENAME}
+# Download and uncompress Godot
+RUN curl -fsSL https://github.com/decentraland/godotengine/releases/download/${GODOT_VERSION}/${GODOT_FILENAME}.zip -o /usr/local/bin/${GODOT_FILENAME}.zip \
+    && unzip /usr/local/bin/${GODOT_FILENAME}.zip -d /usr/local/bin/ \
+    && rm /usr/local/bin/${GODOT_FILENAME}.zip
 RUN chmod +x /usr/local/bin/${GODOT_FILENAME}
 
 ENV GODOT4_EDITOR=/usr/local/bin/${GODOT_FILENAME}
