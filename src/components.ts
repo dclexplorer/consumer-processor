@@ -41,6 +41,13 @@ async function handleEntityId(
       if (ids.length > 0) {
         entityId = ids[0] // Use the first ID as the entityId
         logs.getLogger('main').log(`Resolved Entity ID from pointer: ${entityId}`)
+        await taskQueue.publish({
+          entity: {
+            entityId,
+            authChain: []
+          },
+          contentServerUrls: ['https://peer.decentraland.org/content']
+        })
       } else {
         logs.getLogger('main').error('Error: No entity ID found for the given pointer')
       }
@@ -65,7 +72,8 @@ async function handleEntityId(
       if (urn) {
         const urnParts = urn.split(':')
         entityId = urnParts[3].split('?')[0] // Extract the entityId
-        const baseUrl = urn.split('baseUrl=')[1] // Extract the baseUrl
+        let baseUrl = urn.split('baseUrl=')[1] // Extract the baseUrl
+        baseUrl = baseUrl.replace(/\/contents\/?$/, '') // Remove trailing /contents or /contents/
         logs.getLogger('main').log(`Resolved Entity ID: ${entityId}, Base URL: ${baseUrl}`)
 
         // Publish the resolved entityId and baseUrl
