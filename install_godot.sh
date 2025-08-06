@@ -1,10 +1,26 @@
 #!/bin/bash
 
 # Set variables
-GODOT_VERSION="4.3-stable"
-GODOT_FILENAME="Godot_v${GODOT_VERSION}_linux.x86_64"
-GODOT_URL="https://github.com/godotengine/godot/releases/download/${GODOT_VERSION}/${GODOT_FILENAME}.zip"
+GODOT_VERSION="4.4.1-stable"
 INSTALL_DIR="/usr/local/bin"
+
+# Detect system architecture
+ARCH=$(uname -m)
+if [ "$ARCH" = "x86_64" ]; then
+    # Use Decentraland fork for x86_64
+    GODOT_FILENAME="godot.4.4.1.stable.linux.editor.x86_64"
+    GODOT_URL="https://github.com/decentraland/godotengine/releases/download/${GODOT_VERSION}/${GODOT_FILENAME}.zip"
+elif [ "$ARCH" = "aarch64" ] || [ "$ARCH" = "arm64" ]; then
+    # Use official Godot for ARM64
+    GODOT_FILENAME="Godot_v${GODOT_VERSION}_linux.arm64"
+    GODOT_URL="https://github.com/godotengine/godot/releases/download/${GODOT_VERSION}/${GODOT_FILENAME}.zip"
+else
+    echo "Error: Unsupported architecture: $ARCH"
+    exit 1
+fi
+
+echo "Detected architecture: $ARCH"
+echo "Using Godot filename: $GODOT_FILENAME"
 
 # Download Godot
 echo "Downloading Godot ${GODOT_VERSION}..."

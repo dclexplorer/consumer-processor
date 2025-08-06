@@ -8,15 +8,29 @@ RUN curl -fsSL https://deb.nodesource.com/setup_20.x  | bash - && apt-get -y ins
 
 # Install Godot
 ARG GODOT_VERSION=4.4.1-stable
-ARG GODOT_FILENAME=godot.4.4.1.stable.linux.editor.x86_64
+ARG TARGETARCH
+ARG GODOT_FILENAME
 
-# Download and uncompress Godot
-RUN curl -fsSL https://github.com/decentraland/godotengine/releases/download/${GODOT_VERSION}/${GODOT_FILENAME}.zip -o /usr/local/bin/${GODOT_FILENAME}.zip \
-    && unzip /usr/local/bin/${GODOT_FILENAME}.zip -d /usr/local/bin/ \
-    && rm /usr/local/bin/${GODOT_FILENAME}.zip
-RUN chmod +x /usr/local/bin/${GODOT_FILENAME}
+# Set Godot filename based on architecture
+RUN if [ "$TARGETARCH" = "amd64" ]; then \
+        # Use Decentraland fork for amd64
+        GODOT_FILENAME="godot.4.4.1.stable.linux.editor.x86_64"; \
+        GODOT_URL="https://github.com/decentraland/godotengine/releases/download/${GODOT_VERSION}/${GODOT_FILENAME}.zip"; \
+    elif [ "$TARGETARCH" = "arm64" ]; then \
+        # Use official Godot for arm64 as Decentraland fork doesn't have arm64 builds
+        GODOT_FILENAME="Godot_v4.4.1-stable_linux.arm64"; \
+        GODOT_URL="https://github.com/godotengine/godot/releases/download/4.4.1-stable/${GODOT_FILENAME}.zip"; \
+    else \
+        echo "Unsupported architecture: $TARGETARCH" && exit 1; \
+    fi && \
+    echo "Using Godot from: $GODOT_URL" && \
+    curl -fsSL "$GODOT_URL" -o /usr/local/bin/godot.zip && \
+    unzip /usr/local/bin/godot.zip -d /usr/local/bin/ && \
+    rm /usr/local/bin/godot.zip && \
+    chmod +x /usr/local/bin/${GODOT_FILENAME} && \
+    ln -s /usr/local/bin/${GODOT_FILENAME} /usr/local/bin/godot
 
-ENV GODOT4_EDITOR=/usr/local/bin/${GODOT_FILENAME}
+ENV GODOT4_EDITOR=/usr/local/bin/godot
 
 # Clean apt cache
 RUN rm -rf /var/lib/apt/lists/* /var/cache/apt/*
