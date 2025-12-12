@@ -7,19 +7,19 @@ RUN apt-get install -y ca-certificates tini unzip curl libfontconfig1 zip
 RUN curl -fsSL https://deb.nodesource.com/setup_20.x  | bash - && apt-get -y install nodejs
 
 # Install Godot
-ARG GODOT_VERSION=4.4.1-stable
+ARG GODOT_VERSION=4.5.1.stable
 ARG TARGETARCH
 ARG GODOT_FILENAME
 
 # Set Godot filename based on architecture
 RUN if [ "$TARGETARCH" = "amd64" ]; then \
-        # Use Decentraland fork for amd64
-        GODOT_FILENAME="godot.4.4.1.stable.linux.editor.x86_64"; \
-        GODOT_URL="https://github.com/decentraland/godotengine/releases/download/${GODOT_VERSION}/${GODOT_FILENAME}.zip"; \
+        # Use dclexplorer releases for amd64
+        GODOT_FILENAME="godot.${GODOT_VERSION}.linux.editor.x86_64"; \
+        GODOT_URL="https://godot-engine-releases.dclexplorer.com/${GODOT_VERSION}/editors/${GODOT_FILENAME}.zip"; \
     elif [ "$TARGETARCH" = "arm64" ]; then \
-        # Use official Godot for arm64 as Decentraland fork doesn't have arm64 builds
-        GODOT_FILENAME="Godot_v4.4.1-stable_linux.arm64"; \
-        GODOT_URL="https://github.com/godotengine/godot/releases/download/4.4.1-stable/${GODOT_FILENAME}.zip"; \
+        # Use official Godot for arm64 as dclexplorer doesn't have arm64 builds
+        GODOT_FILENAME="Godot_v4.5.1-stable_linux.arm64"; \
+        GODOT_URL="https://github.com/godotengine/godot/releases/download/4.5.1-stable/${GODOT_FILENAME}.zip"; \
     else \
         echo "Unsupported architecture: $TARGETARCH" && exit 1; \
     fi && \
