@@ -13,6 +13,8 @@ import { AppComponents, GlobalContext } from './types'
 import path from 'path'
 import { createMockSnsAdapterComponent, createSnsAdapterComponent } from './adapters/sns'
 import { AwsCredentialIdentity } from '@smithy/types'
+import { createMonitoringReporter } from './adapters/monitoring-reporter'
+import { getProcessMethod } from './service'
 
 // Helper function to handle entityId logic
 async function handleEntityId(
@@ -152,6 +154,10 @@ export async function initComponents(): Promise<AppComponents> {
     ? createSnsAdapterComponent({ logs }, { snsArn, snsEndpoint: snsEndpoint })
     : createMockSnsAdapterComponent({ logs })
 
+  // Create monitoring reporter
+  const processMethod = await getProcessMethod(config)
+  const monitoringReporter = createMonitoringReporter({ logs, config, fetch }, processMethod)
+
   const entityIdIndex = process.argv.findIndex((p) => p === '--entityId')
   if (entityIdIndex !== -1) {
     const entityId = process.argv[entityIdIndex + 1]
@@ -173,6 +179,7 @@ export async function initComponents(): Promise<AppComponents> {
     runner,
     deploymentsByPointer: mitt(),
     storage,
-    snsAdapter
+    snsAdapter,
+    monitoringReporter
   }
 }

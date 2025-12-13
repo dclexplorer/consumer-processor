@@ -49,6 +49,19 @@ export async function main(program: Lifecycle.EntryPointParameters<AppComponents
   components.runner.runTask(async (opt) => {
     while (opt.isRunning) {
       await components.taskQueue.consumeAndProcessJob(async (job, message) => {
+        const sceneId = job.entity.entityId
+        const startedAt = new Date().toISOString()
+        const startTime = Date.now()
+
+        // Report job start
+        components.monitoringReporter.reportHeartbeat({
+          status: 'processing',
+          currentSceneId: sceneId,
+          currentStep: 'Starting',
+          progressPercent: 0,
+          startedAt
+        })
+
         try {
           switch (processMethod) {
             case 'godot_optimizer':
@@ -67,9 +80,28 @@ export async function main(program: Lifecycle.EntryPointParameters<AppComponents
               logger.info('Consume and Process: ', { job: JSON.stringify(job), message: JSON.stringify(message) })
               break
           }
+
+          // Report job success
+          components.monitoringReporter.reportJobComplete({
+            sceneId,
+            status: 'success',
+            startedAt,
+            completedAt: new Date().toISOString(),
+            durationMs: Date.now() - startTime
+          })
         } catch (error) {
           logger.error(`Error processing job ${job.entity.entityId}`)
           logger.error(error as any)
+
+          // Report job failure
+          components.monitoringReporter.reportJobComplete({
+            sceneId,
+            status: 'failed',
+            startedAt,
+            completedAt: new Date().toISOString(),
+            durationMs: Date.now() - startTime,
+            errorMessage: error instanceof Error ? error.message : 'Unknown error'
+          })
         }
       })
     }

@@ -13,6 +13,7 @@ import { IRunnerComponent } from './adapters/runner'
 import { Emitter } from 'mitt'
 import { IStorageComponent } from './adapters/storage'
 import { ISNSAdapterComponent } from './adapters/sns'
+import { IMonitoringReporter } from './adapters/monitoring-reporter'
 
 export type GlobalContext = {
   components: BaseComponents
@@ -30,6 +31,7 @@ export type BaseComponents = {
   deploymentsByPointer: Emitter<Record<string /* pointer */, DeploymentToSqs>>
   storage: IStorageComponent
   snsAdapter: ISNSAdapterComponent
+  monitoringReporter: IMonitoringReporter
 }
 
 // components used in runtime
