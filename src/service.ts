@@ -52,6 +52,11 @@ export async function main(program: Lifecycle.EntryPointParameters<AppComponents
         const sceneId = job.entity.entityId
         const startedAt = new Date().toISOString()
         const startTime = Date.now()
+        const isPriority = message.isPriority
+
+        if (isPriority) {
+          logger.info('Processing PRIORITY job', { sceneId })
+        }
 
         // Report job start
         components.monitoringReporter.reportHeartbeat({
@@ -59,7 +64,8 @@ export async function main(program: Lifecycle.EntryPointParameters<AppComponents
           currentSceneId: sceneId,
           currentStep: 'Starting',
           progressPercent: 0,
-          startedAt
+          startedAt,
+          isPriority
         })
 
         try {
@@ -87,7 +93,8 @@ export async function main(program: Lifecycle.EntryPointParameters<AppComponents
             status: 'success',
             startedAt,
             completedAt: new Date().toISOString(),
-            durationMs: Date.now() - startTime
+            durationMs: Date.now() - startTime,
+            isPriority
           })
         } catch (error) {
           logger.error(`Error processing job ${job.entity.entityId}`)
@@ -100,7 +107,8 @@ export async function main(program: Lifecycle.EntryPointParameters<AppComponents
             startedAt,
             completedAt: new Date().toISOString(),
             durationMs: Date.now() - startTime,
-            errorMessage: error instanceof Error ? error.message : 'Unknown error'
+            errorMessage: error instanceof Error ? error.message : 'Unknown error',
+            isPriority
           })
         }
       })

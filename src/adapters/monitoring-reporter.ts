@@ -14,6 +14,7 @@ export interface HeartbeatData {
   currentStep?: string
   progressPercent?: number
   startedAt?: string
+  isPriority?: boolean
 }
 
 export interface JobCompleteData {
@@ -23,6 +24,7 @@ export interface JobCompleteData {
   completedAt: string
   durationMs: number
   errorMessage?: string
+  isPriority?: boolean
 }
 
 interface MonitoringReporterComponents {

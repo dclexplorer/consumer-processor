@@ -6,6 +6,7 @@ import { AppComponents } from '../types'
 
 export interface TaskQueueMessage {
   id: string
+  isPriority: boolean
 }
 
 export interface ITaskQueue<T> {
@@ -52,9 +53,9 @@ export function createMemoryQueueAdapter<T>(
     async stop() {
       q.close()
     },
-    async publish(job) {
+    async publish(job, prioritize?: boolean) {
       const id = 'job-' + (++lastJobId).toString()
-      const message: TaskQueueMessage = { id }
+      const message: TaskQueueMessage = { id, isPriority: !!prioritize }
       q.enqueue({ job, message })
       logger.info(`Publishing job`, { id })
       components.metrics.increment('job_queue_enqueue_total', { queue_name: options.queueName })
@@ -139,7 +140,7 @@ export function createSqsAdapter<T>(
 
       const published = await sqs.send(command)
 
-      const m: TaskQueueMessage = { id: published.MessageId! }
+      const m: TaskQueueMessage = { id: published.MessageId!, isPriority: !!prioritize }
 
       logger.info(`Publishing job ${JSON.stringify(m)}`)
 
@@ -154,7 +155,8 @@ export function createSqsAdapter<T>(
 
           if (response && response.Messages && response.Messages.length > 0) {
             for (const it of response.Messages) {
-              const message: TaskQueueMessage = { id: it.MessageId! }
+              const isPriority = options.priorityQueueUrl ? queueUsed === options.priorityQueueUrl : false
+              const message: TaskQueueMessage = { id: it.MessageId!, isPriority }
               const { end } = components.metrics.startTimer('job_queue_duration_seconds', {
                 queue_name: options.queueUrl
               })
