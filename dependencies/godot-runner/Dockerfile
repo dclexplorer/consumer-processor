@@ -1,10 +1,18 @@
 FROM ubuntu:25.04
 
-RUN apt-get update
-RUN apt-get install -y ca-certificates tini xvfb curl unzip libfontconfig1 zip
-
-# Install node
-RUN curl -fsSL https://deb.nodesource.com/setup_20.x  | bash - && apt-get -y install nodejs
+# Install base packages and Node.js in combined layers
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+        ca-certificates \
+        tini \
+        xvfb \
+        curl \
+        unzip \
+        libfontconfig1 \
+        zip && \
+    curl -fsSL https://deb.nodesource.com/setup_20.x | bash - && \
+    apt-get install -y --no-install-recommends nodejs && \
+    rm -rf /var/lib/apt/lists/*
 
 # Install Godot
 ARG GODOT_VERSION=4.4.1-stable
@@ -30,9 +38,6 @@ RUN if [ "$TARGETARCH" = "amd64" ]; then \
     ln -s /usr/local/bin/${GODOT_FILENAME} /usr/local/bin/godot
 
 ENV GODOT4_EDITOR=/usr/local/bin/godot
-
-# Clean apt cache
-RUN rm -rf /var/lib/apt/lists/* /var/cache/apt/*
 
 ARG COMMIT_HASH=local
 ARG CURRENT_VERSION=Unknown

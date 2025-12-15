@@ -5,8 +5,9 @@ FROM node:lts as builderenv
 WORKDIR /app
 
 # some packages require a build step
-RUN apt-get update
-RUN apt-get -y -qq install build-essential
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends build-essential && \
+    rm -rf /var/lib/apt/lists/*
 
 # We use Tini to handle signals and PID1 (https://github.com/krallin/tini, read why here https://github.com/krallin/tini/issues/8)
 ENV TINI_VERSION v0.19.0
