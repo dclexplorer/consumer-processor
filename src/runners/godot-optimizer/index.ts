@@ -212,8 +212,6 @@ async function processOptimizer(
       const dependencyPath = path.join(godotContentDir, dependency.hash.value + extension)
       await fs.copyFile(srcPath, dependencyPath)
     }
-
-    state.fatalError = false
   }
 
   for (const texture of textures) {
@@ -222,8 +220,9 @@ async function processOptimizer(
     await fs.copyFile(srcPath, dependencyPath)
   }
 
-  if (state.fatalError) {
-    throw new Error('There is no gltfs or assets to process')
+  // Check if there's anything to process (GLTFs or textures)
+  if (gltfs.length === 0 && textures.length === 0) {
+    throw new Error('There are no gltfs or textures to process')
   }
 
   const contentFiles = await fs.readdir(godotContentDir)
@@ -233,7 +232,9 @@ async function processOptimizer(
   const importGodotArgs = ['--editor', '--import', '--headless', '--rendering-driver', 'opengl3']
   const importGltfTimeout = 20000
   const importGltfDependenciesTimeout = 10000
-  const importTimeout = importGltfTimeout * gltfs.length + importGltfDependenciesTimeout * state.dependencyTimeUsed.size
+  const baseTimeout = 30000 // Base timeout for textures and basic operations
+  const importTimeout =
+    baseTimeout + importGltfTimeout * gltfs.length + importGltfDependenciesTimeout * state.dependencyTimeUsed.size
 
   const importResult = await runGodotEditor(
     godotExecutable,
@@ -244,18 +245,21 @@ async function processOptimizer(
   )
   state.importResult = importResult
 
-  state.fatalError = true
-  for (const file of contentFiles) {
-    const filePath = path.join(godotContentDir, `${file}.import`)
-    if (!file.endsWith('.bin') && !(await fileExists(filePath))) {
-      state.errors.push(`File ${filePath} was not imported correctly`)
-    } else {
-      state.fatalError = false
+  // Check if GLTF imports succeeded (only if we have GLTFs)
+  if (gltfs.length > 0) {
+    state.fatalError = true
+    for (const file of contentFiles) {
+      const filePath = path.join(godotContentDir, `${file}.import`)
+      if (!file.endsWith('.bin') && !(await fileExists(filePath))) {
+        state.errors.push(`File ${filePath} was not imported correctly`)
+      } else {
+        state.fatalError = false
+      }
     }
-  }
 
-  if (state.fatalError) {
-    throw new Error('Imports failed')
+    if (state.fatalError) {
+      throw new Error('Imports failed')
+    }
   }
 
   // 4.1) Resize all the texture files
@@ -290,21 +294,24 @@ async function processOptimizer(
   )
   state.convertionResult = convertionResult
 
-  state.fatalError = true
-  for (const file of contentFiles) {
-    if (file.endsWith('.glb') || file.endsWith('.gltf')) {
-      const hashFile = file.replace('.glb', '').replace('.gltf', '')
-      const tscnFilePath = path.join(godotGlbScenesDir, `${hashFile}.tscn`)
-      if (!(await fileExists(tscnFilePath))) {
-        state.errors.push(`File ${tscnFilePath} was not converted correctly`)
-      } else {
-        state.fatalError = false
+  // Check if GLTF to TSCN conversion succeeded (only if we have GLTFs)
+  if (gltfs.length > 0) {
+    state.fatalError = true
+    for (const file of contentFiles) {
+      if (file.endsWith('.glb') || file.endsWith('.gltf')) {
+        const hashFile = file.replace('.glb', '').replace('.gltf', '')
+        const tscnFilePath = path.join(godotGlbScenesDir, `${hashFile}.tscn`)
+        if (!(await fileExists(tscnFilePath))) {
+          state.errors.push(`File ${tscnFilePath} was not converted correctly`)
+        } else {
+          state.fatalError = false
+        }
       }
     }
-  }
 
-  if (state.fatalError) {
-    throw new Error('Imports failed')
+    if (state.fatalError) {
+      throw new Error('GLTF to TSCN conversion failed')
+    }
   }
 
   // 6) Then we remove all the imported gltfs and glb files, leaving only the .tscn files and their dependencies
@@ -347,79 +354,79 @@ async function processOptimizer(
     }
   }
 
-  // 8) Map dependencies to only use what are needed
-  const dependenciesRelativePath = `glbs/${sceneId}-dependencies-map.json`
-
-  const dependenciesGodotArgs = [
-    '--headless',
-    '--rendering-driver',
-    'opengl3',
-    '--compute-dependencies',
-    dependenciesRelativePath
-  ]
-  const dependenciesResult = await runGodotEditor(
-    godotExecutable,
-    godotProjectPath,
-    components,
-    dependenciesGodotArgs,
-    importTimeout
-  )
-  if (dependenciesResult.error) {
-    state.errors.push(`Dependencies failed: ${dependenciesResult.error}`)
-  }
-
-  const dependenciesPath = path.join(godotProjectPath, dependenciesRelativePath)
-  const gltfDependencies: Record<string, string[]> = JSON.parse(await fs.readFile(dependenciesPath, 'utf-8'))
-
-  // 8) Prepare export_presets.cfg to only export the needed files
   // Read export_presets.cfg
   const exportPresetsPath = path.join(godotProjectPath, 'export_presets.cfg')
   const exportPresetsContent = await fs.readFile(exportPresetsPath, 'utf-8')
 
-  // Get all .tscn files from godotGlbScenesDir
-  const glbSceneIds = (await fs.readdir(godotGlbScenesDir))
-    .filter((file) => file.endsWith('.tscn'))
-    .map((file) => file.replace(/\.tscn$/, ''))
-
   const outputFilePaths: FileKeyAndPath[] = []
-
   const externalSceneDependencies: Record<string, string[]> = {}
 
-  // 9) Export each scene to a zip file
-  for (const glbSceneId of glbSceneIds) {
-    const scenePath = `"res://glbs/${glbSceneId}.tscn"`
-    const dependencies = gltfDependencies[`${glbSceneId}.tscn`].map((s) => `"${s}"`)
-    const remapDependencies = gltfDependencies[`${glbSceneId}.tscn`].map((s) => `"${removeExtension(s)}.remap"`)
-    const sceneDependencies = [...dependencies, ...remapDependencies]
+  // 8) Map dependencies and export GLTFs (only if we have GLTFs)
+  if (gltfs.length > 0) {
+    const dependenciesRelativePath = `glbs/${sceneId}-dependencies-map.json`
 
-    // remove external dependencies on the export
-    const internalSceneDependencies = sceneDependencies.filter((s) => s.includes(glbSceneId))
-    const includedResources = [scenePath, ...internalSceneDependencies].join(',')
-
-    // get external dependencies
-    const externalDependencies = dependencies
-      .filter((m) => !m.includes(glbSceneId))
-      .map((m) => {
-        const fileName = m.split('/').pop() || ''
-        return fileName.split('.').shift() || ''
-      })
-
-    const excludeResources = externalDependencies.map((s) => `*${s}*`).join(',')
-
-    await exportResource(
-      glbSceneId,
-      includedResources,
-      excludeResources,
-      exportPresetsContent,
-      godotProjectPath,
+    const dependenciesGodotArgs = [
+      '--headless',
+      '--rendering-driver',
+      'opengl3',
+      '--compute-dependencies',
+      dependenciesRelativePath
+    ]
+    const dependenciesResult = await runGodotEditor(
       godotExecutable,
-      importTimeout,
+      godotProjectPath,
       components,
-      state,
-      outputFilePaths
+      dependenciesGodotArgs,
+      importTimeout
     )
+    if (dependenciesResult.error) {
+      state.errors.push(`Dependencies failed: ${dependenciesResult.error}`)
+    }
 
-    externalSceneDependencies[glbSceneId] = externalDependencies
+    const dependenciesPath = path.join(godotProjectPath, dependenciesRelativePath)
+    const gltfDependencies: Record<string, string[]> = JSON.parse(await fs.readFile(dependenciesPath, 'utf-8'))
+
+    // Get all .tscn files from godotGlbScenesDir
+    const glbSceneIds = (await fs.readdir(godotGlbScenesDir))
+      .filter((file) => file.endsWith('.tscn'))
+      .map((file) => file.replace(/\.tscn$/, ''))
+
+    // 9) Export each scene to a zip file
+    for (const glbSceneId of glbSceneIds) {
+      const scenePath = `"res://glbs/${glbSceneId}.tscn"`
+      const dependencies = gltfDependencies[`${glbSceneId}.tscn`].map((s) => `"${s}"`)
+      const remapDependencies = gltfDependencies[`${glbSceneId}.tscn`].map((s) => `"${removeExtension(s)}.remap"`)
+      const sceneDependencies = [...dependencies, ...remapDependencies]
+
+      // remove external dependencies on the export
+      const internalSceneDependencies = sceneDependencies.filter((s) => s.includes(glbSceneId))
+      const includedResources = [scenePath, ...internalSceneDependencies].join(',')
+
+      // get external dependencies
+      const externalDependencies = dependencies
+        .filter((m) => !m.includes(glbSceneId))
+        .map((m) => {
+          const fileName = m.split('/').pop() || ''
+          return fileName.split('.').shift() || ''
+        })
+
+      const excludeResources = externalDependencies.map((s) => `*${s}*`).join(',')
+
+      await exportResource(
+        glbSceneId,
+        includedResources,
+        excludeResources,
+        exportPresetsContent,
+        godotProjectPath,
+        godotExecutable,
+        importTimeout,
+        components,
+        state,
+        outputFilePaths
+      )
+
+      externalSceneDependencies[glbSceneId] = externalDependencies
+    }
   }
 
   // 10) Export each individual texture to a zip file
