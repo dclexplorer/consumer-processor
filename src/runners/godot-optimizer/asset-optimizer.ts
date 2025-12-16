@@ -7,6 +7,108 @@ import { getDependencies, openGltf } from './gltf'
 import { DownloadedFile, DownloadedGltf, DownloadedGltfWithDependencies, GltfDependency } from './types'
 import { detectFormat, getExtension, isImageFormat } from './file-format'
 
+// Scene limits to prevent processing extremely large scenes
+export const DEFAULT_MAX_GLTF_COUNT = 200
+export const DEFAULT_MAX_CONTENT_SIZE_BYTES = 1024 * 1024 * 1024 // 1GB
+
+export type SceneValidationResult = {
+  isValid: boolean
+  gltfCount: number
+  totalFiles: number
+  estimatedSizeBytes: number
+  errors: string[]
+}
+
+/**
+ * Estimate the total content size by checking Content-Length headers
+ * Uses sampling for large scenes to avoid too many HEAD requests
+ */
+export async function estimateContentSize(
+  content: ContentMapping[],
+  contentBaseUrl: string,
+  logger: ILoggerComponent.ILogger
+): Promise<number> {
+  const uniqueHashes = [...new Set(content.map((c) => c.hash))]
+
+  // For very large scenes, sample to estimate
+  const MAX_SAMPLE = 100
+  const samplesToCheck = uniqueHashes.length > MAX_SAMPLE ? uniqueHashes.slice(0, MAX_SAMPLE) : uniqueHashes
+
+  const queue = new PQueue({ concurrency: 10 })
+  let totalSampleSize = 0
+
+  await Promise.all(
+    samplesToCheck.map((hash) =>
+      queue.add(async () => {
+        try {
+          const response = await fetch(`${contentBaseUrl}/contents/${hash}`, { method: 'HEAD' })
+          const contentLength = response.headers.get('content-length')
+          if (contentLength) {
+            totalSampleSize += parseInt(contentLength, 10)
+          }
+        } catch (error) {
+          logger.debug(`Failed to get size for ${hash}: ${error}`)
+        }
+      })
+    )
+  )
+
+  // Extrapolate if we sampled
+  if (uniqueHashes.length > MAX_SAMPLE) {
+    const avgSize = totalSampleSize / samplesToCheck.length
+    return avgSize * uniqueHashes.length
+  }
+
+  return totalSampleSize
+}
+
+/**
+ * Validate scene before processing - checks GLTF count and estimated size
+ */
+export async function validateScene(
+  entity: Entity,
+  contentBaseUrl: string,
+  logger: ILoggerComponent.ILogger,
+  maxGltfCount: number = DEFAULT_MAX_GLTF_COUNT,
+  maxContentSizeBytes: number = DEFAULT_MAX_CONTENT_SIZE_BYTES
+): Promise<SceneValidationResult> {
+  const errors: string[] = []
+
+  const gltfs = entity.content.filter(
+    (item) => item.file.toLowerCase().endsWith('.glb') || item.file.toLowerCase().endsWith('.gltf')
+  )
+  const gltfCount = gltfs.length
+  const totalFiles = entity.content.length
+
+  logger.info(`Scene validation: ${gltfCount} GLTFs, ${totalFiles} total files`)
+
+  // Check GLTF count
+  if (gltfCount > maxGltfCount) {
+    errors.push(`Scene has ${gltfCount} GLTFs, exceeds maximum of ${maxGltfCount}`)
+  }
+
+  // Estimate content size
+  logger.info('Estimating content size...')
+  const estimatedSizeBytes = await estimateContentSize(entity.content, contentBaseUrl, logger)
+  const estimatedSizeMB = estimatedSizeBytes / 1024 / 1024
+  logger.info(`Estimated content size: ${estimatedSizeMB.toFixed(2)} MB`)
+
+  // Check content size
+  if (estimatedSizeBytes > maxContentSizeBytes) {
+    errors.push(
+      `Scene estimated size is ${estimatedSizeMB.toFixed(2)} MB, exceeds maximum of ${maxContentSizeBytes / 1024 / 1024} MB`
+    )
+  }
+
+  return {
+    isValid: errors.length === 0,
+    gltfCount,
+    totalFiles,
+    estimatedSizeBytes,
+    errors
+  }
+}
+
 /**
  * Get the entity definition for a list of pointers
  * @param pointers - The pointers to get the entity definition for

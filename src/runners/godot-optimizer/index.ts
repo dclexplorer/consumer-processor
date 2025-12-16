@@ -3,7 +3,15 @@ import fs from 'fs/promises'
 import path from 'path'
 import { TaskQueueMessage } from '../../adapters/sqs'
 import { AppComponents } from '../../types'
-import { getAllGltfsWithDependencies, getAllTextures, getEntityDefinition } from './asset-optimizer'
+import {
+  getAllGltfsWithDependencies,
+  getAllTextures,
+  getEntityDefinition,
+  validateScene,
+  SceneValidationResult,
+  DEFAULT_MAX_GLTF_COUNT,
+  DEFAULT_MAX_CONTENT_SIZE_BYTES
+} from './asset-optimizer'
 import { dirExists, fileExists, removeExtension } from '../../fs-helper'
 import { modifyGltfToMapDependencies } from './gltf'
 import { GodotEditorResult, runGodotEditor } from './run-godot-editor'
@@ -15,6 +23,9 @@ type GodotOptimizerState = {
   //  if there are errors, we will log them and continue to the next GLTF
   //  if there are fatal errors, we will log them and stop the process
   errors: string[]
+
+  // Scene validation result
+  validation: SceneValidationResult | null
 
   gltfs: DownloadedGltfWithDependencies[]
   dependencies: DownloadedFile[]
@@ -47,6 +58,7 @@ export async function godotOptimizer(
   }
   const state: GodotOptimizerState = {
     errors: [],
+    validation: null,
     gltfs: [],
     dependencies: [],
     dependencyTimeUsed: new Map<string, number>(),
@@ -165,6 +177,23 @@ async function processOptimizer(
   logger.info(
     `Fetched entity definition for ${sceneId} with contentBaseUrl ${contentBaseUrl} holding ${scene.pointers.length} pointers`
   )
+
+  // 1.b) Validate scene size and complexity before processing
+  const maxGltfCount = parseInt((await components.config.getString('MAX_GLTF_COUNT')) ?? '', 10) || DEFAULT_MAX_GLTF_COUNT
+  const maxContentSizeBytes =
+    parseInt((await components.config.getString('MAX_CONTENT_SIZE_BYTES')) ?? '', 10) || DEFAULT_MAX_CONTENT_SIZE_BYTES
+
+  const validation = await validateScene(scene, contentBaseUrl, logger, maxGltfCount, maxContentSizeBytes)
+  state.validation = validation
+
+  if (!validation.isValid) {
+    state.fatalError = true
+    for (const error of validation.errors) {
+      state.errors.push(error)
+      logger.error(`Scene validation failed: ${error}`)
+    }
+    throw new Error(`Scene validation failed: ${validation.errors.join('; ')}`)
+  }
 
   // 2) Then we download all the gltfs with their dependencies
   const { gltfs, dependencies } = await getAllGltfsWithDependencies(scene, contentBaseUrl, originalContentDir, logger)
