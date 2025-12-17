@@ -83,7 +83,8 @@ export async function godotOptimizer(
     const logger = components.logs.getLogger('godot-optimizer')
     logger.error(`Error processing job ${entity.entity.entityId}`)
     logger.error(error as any)
-    state.errors.push(error as any)
+    // Push error message as string (Error objects serialize to {} in JSON)
+    state.errors.push(error instanceof Error ? error.message : String(error))
   }
 
   try {
