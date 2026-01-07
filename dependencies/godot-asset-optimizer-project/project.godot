@@ -12,7 +12,7 @@ config_version=5
 
 config/name="New Game Project"
 run/main_scene="res://scripts/main.tscn"
-config/features=PackedStringArray("4.4", "Mobile")
+config/features=PackedStringArray("4.5", "Mobile")
 config/icon="res://icon.svg"
 
 [importer_defaults]
@@ -39,6 +39,28 @@ scene={
 "nodes/root_scale": 1.0,
 "nodes/root_type": "",
 "skins/use_named_skins": true
+}
+cubemap_texture={
+&"compress/mode": 2,
+&"mipmaps/generate": false
+}
+2d_array_texture={
+&"compress/mode": 2,
+&"mipmaps/generate": false
+}
+texture={
+&"compress/mode": 2
+}
+wavefront_obj={
+&"generate_lods": false
+}
+cubemap_array_texture={
+&"compress/mode": 2,
+&"mipmaps/generate": false
+}
+3d_texture={
+&"compress/mode": 2,
+&"mipmaps/generate": false
 }
 
 [rendering]
