@@ -85,11 +85,12 @@ export function createMemoryQueueAdapter<T>(
 
 export function createSqsAdapter<T>(
   components: Pick<AppComponents, 'logs' | 'metrics'>,
-  options: { queueUrl: string; priorityQueueUrl?: string; queueRegion?: string }
+  options: { queueUrl: string; priorityQueueUrl?: string; queueRegion?: string; endpoint?: string }
 ): ITaskQueue<T> {
   const logger = components.logs.getLogger(options.queueUrl)
   const sqs = new SQSClient({
-    region: options.queueRegion
+    region: options.queueRegion,
+    ...(options.endpoint && { endpoint: options.endpoint })
   })
 
   async function receiveMessage(quantityOfMessages: number): Promise<{ response: any | undefined; queueUsed: string }> {
@@ -162,7 +163,10 @@ export function createSqsAdapter<T>(
               })
               try {
                 logger.info(`Processing job`, { id: message.id })
-                const result = await taskRunner(JSON.parse(it.Body!), message)
+                // Parse the SNS over SQS envelope to extract the actual message
+                const bodyParsed = JSON.parse(it.Body!)
+                const job = JSON.parse(bodyParsed.Message)
+                const result = await taskRunner(job, message)
                 logger.info(`Processed job`, { id: message.id })
 
                 await sqs.send(

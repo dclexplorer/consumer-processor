@@ -2,19 +2,23 @@
 
 # Usage message
 usage() {
-  echo "Usage: $0 [--build] [--multiarch] [runner-type] [--option key value]"
+  echo "Usage: $0 [--build] [--multiarch] [runner-type] [options]"
   echo ""
   echo "Options:"
   echo "  --build        Build the Docker image before running the container."
   echo "  --multiarch    Build for multiple architectures (amd64 and arm64)."
   echo "  runner-type    Specify the runner type ('godot-runner', 'crdt-runner', or 'godot-optimizer')."
-  echo "  --option key value  Forward additional options to the docker run command."
+  echo ""
+  echo "Entrypoint options (passed to the Node.js app):"
+  echo "  --entityId <hash|pointer>   Process a single entity by hash or pointer (e.g., '0,0')"
+  echo "  --profile <address>         Process all wearables/emotes from an Ethereum address profile"
   echo ""
   echo "Examples:"
   echo "  $0 --build godot-runner"
   echo "  $0 --build --multiarch godot-runner"
-  echo "  $0 crdt-runner --build"
-  echo "  $0 godot-runner --option key value"
+  echo "  $0 godot-optimizer --entityId bafybei..."
+  echo "  $0 godot-optimizer --entityId 0,0"
+  echo "  $0 godot-optimizer --profile 0x481bed8645804714Efd1dE3f25467f78E7Ba07d6"
   exit 1
 }
 
@@ -120,9 +124,20 @@ fi
 # Run the Docker container interactively with automatic cleanup
 echo "Running the Docker container interactively..."
 echo "Entrypoint arguments: ${EXTRA_ARGS[@]}"
+
+# godot-optimizer uses /service for node app (to preserve /app with godot-explorer files)
+if [[ "$RUNNER_TYPE" == "godot-optimizer" ]]; then
+  VOLUME_MOUNT="/service"
+  PORT_MAPPING="-p 3000:3000 -p 8080:8080"
+else
+  VOLUME_MOUNT="/app"
+  PORT_MAPPING="-p 8080:8080"
+fi
+
 docker run --rm -it \
-  -p 8080:8080 \
-  -v $(pwd):/app/ \
+  $PORT_MAPPING \
+  -v $(pwd):${VOLUME_MOUNT}/ \
+  --env-file "$ENVFILE" \
   "$IMAGE_NAME" \
   "${EXTRA_ARGS[@]}" || {
     echo "Error: Failed to run the Docker container. Check the provided arguments."

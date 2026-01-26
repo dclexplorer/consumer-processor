@@ -14,6 +14,7 @@ import { Emitter } from 'mitt'
 import { IStorageComponent } from './adapters/storage'
 import { ISNSAdapterComponent } from './adapters/sns'
 import { IMonitoringReporter } from './adapters/monitoring-reporter'
+import { IAssetServerComponent } from './adapters/asset-server'
 
 export type GlobalContext = {
   components: BaseComponents
@@ -32,6 +33,7 @@ export type BaseComponents = {
   storage: IStorageComponent
   snsAdapter: ISNSAdapterComponent
   monitoringReporter: IMonitoringReporter
+  assetServer: IAssetServerComponent
 }
 
 // components used in runtime
