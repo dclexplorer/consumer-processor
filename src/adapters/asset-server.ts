@@ -14,6 +14,8 @@ export interface IAssetServerComponent {
   getBatchStatus(batchId: string): Promise<BatchStatus>
   waitForCompletion(batchId: string, timeoutMs?: number): Promise<BatchStatus>
   restartGodot(): Promise<boolean>
+  getGodotLogs(): string[]
+  clearGodotLogs(): void
 }
 
 export type ProcessSceneParams = {
@@ -86,6 +88,28 @@ export function createAssetServerComponent(
   const { logs, fetch } = components
   const { baseUrl } = config
   const logger = logs.getLogger('asset-server')
+
+  // Buffer to store Godot process output
+  let godotLogs: string[] = []
+  const MAX_LOG_LINES = 5000 // Limit to prevent memory issues
+
+  function addGodotLog(line: string) {
+    if (line.trim()) {
+      godotLogs.push(line.trim())
+      // Keep only the last MAX_LOG_LINES
+      if (godotLogs.length > MAX_LOG_LINES) {
+        godotLogs = godotLogs.slice(-MAX_LOG_LINES)
+      }
+    }
+  }
+
+  function getGodotLogs(): string[] {
+    return [...godotLogs]
+  }
+
+  function clearGodotLogs(): void {
+    godotLogs = []
+  }
 
   async function isReady(): Promise<boolean> {
     try {
@@ -209,9 +233,38 @@ export function createAssetServerComponent(
       // Wait for process to fully terminate
       await new Promise((resolve) => setTimeout(resolve, 2000))
 
+      // Clear logs from previous run
+      clearGodotLogs()
+      addGodotLog(`[${new Date().toISOString()}] Starting Godot asset-server...`)
+
       // Start new Godot process in background
       const godotCmd = `/app/decentraland.godot.client.x86_64 --headless --asset-server --asset-server-port ${port}`
       const child = exec(godotCmd)
+
+      // Capture stdout
+      if (child.stdout) {
+        child.stdout.on('data', (data: Buffer | string) => {
+          const lines = data.toString().split('\n')
+          for (const line of lines) {
+            addGodotLog(line)
+          }
+        })
+      }
+
+      // Capture stderr
+      if (child.stderr) {
+        child.stderr.on('data', (data: Buffer | string) => {
+          const lines = data.toString().split('\n')
+          for (const line of lines) {
+            addGodotLog(`[stderr] ${line}`)
+          }
+        })
+      }
+
+      // Log when process exits
+      child.on('exit', (code, signal) => {
+        addGodotLog(`[${new Date().toISOString()}] Godot process exited with code ${code}, signal ${signal}`)
+      })
 
       // Detach from child process - we don't need to track it
       child.unref()
@@ -221,14 +274,18 @@ export function createAssetServerComponent(
         await new Promise((resolve) => setTimeout(resolve, 1000))
         if (await isReady()) {
           logger.info('Godot asset-server is ready after restart')
+          addGodotLog(`[${new Date().toISOString()}] Godot asset-server is ready`)
           return true
         }
       }
 
       logger.error('Godot asset-server failed to become ready after restart')
+      addGodotLog(`[${new Date().toISOString()}] ERROR: Godot asset-server failed to become ready`)
       return false
     } catch (error) {
-      logger.error('Failed to restart Godot', { error: error instanceof Error ? error.message : String(error) })
+      const errorMsg = error instanceof Error ? error.message : String(error)
+      logger.error('Failed to restart Godot', { error: errorMsg })
+      addGodotLog(`[${new Date().toISOString()}] ERROR: Failed to restart Godot: ${errorMsg}`)
       return false
     }
   }
@@ -239,6 +296,8 @@ export function createAssetServerComponent(
     processAssets,
     getBatchStatus,
     waitForCompletion,
-    restartGodot
+    restartGodot,
+    getGodotLogs,
+    clearGodotLogs
   }
 }

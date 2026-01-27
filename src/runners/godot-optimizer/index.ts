@@ -28,6 +28,7 @@ type ProcessReport = {
   startedAt: Date
   finishedAt: Date | null
   errors: string[]
+  godotLogs: string[]
   individualAssets: {
     total: number
     successful: number
@@ -54,7 +55,7 @@ export async function godotOptimizer(
   _msg: TaskQueueMessage,
   components: Pick<AppComponents, 'logs' | 'config' | 'storage' | 'assetServer' | 'fetch'>
 ): Promise<void> {
-  const { logs, assetServer } = components
+  const { logs, assetServer, storage } = components
   const logger = logs.getLogger('godot-optimizer')
 
   // Cast to extended type to access entityType
@@ -66,20 +67,36 @@ export async function godotOptimizer(
     entityType
   })
 
+  const tempDir = path.join(process.cwd(), 'temp')
+  let report: ProcessReport | null = null
+
   try {
     switch (entityType) {
       case 'scene':
-        await processScene(entity, components)
+        report = await processScene(entity, components)
         break
       case 'wearable':
       case 'emote':
-        await processWearableOrEmote(entity, entityType, components)
+        report = await processWearableOrEmote(entity, entityType, components)
         break
       default:
         logger.warn('Unknown entity type, defaulting to scene processing', { entityType })
-        await processScene(entity, components)
+        report = await processScene(entity, components)
     }
   } finally {
+    // Get Godot logs before restart (they will be cleared on restart)
+    const godotProcessLogs = assetServer.getGodotLogs()
+    if (godotProcessLogs.length > 0) {
+      logger.info('Captured Godot process logs', { lineCount: godotProcessLogs.length })
+    }
+
+    // Add Godot process logs to report
+    if (report) {
+      report.godotLogs = [...report.godotLogs, ...godotProcessLogs]
+      // Store the report with Godot logs included
+      await storeReport(report, tempDir, storage, logger)
+    }
+
     // Restart Godot after each entity to free memory
     logger.info('Processing complete, restarting Godot to free memory', {
       entityId: entity.entity.entityId
@@ -94,7 +111,7 @@ export async function godotOptimizer(
 async function processScene(
   entity: DeploymentToSqs,
   components: Pick<AppComponents, 'logs' | 'config' | 'storage' | 'assetServer' | 'fetch'>
-): Promise<void> {
+): Promise<ProcessReport> {
   const { logs, storage, assetServer, config } = components
   const logger = logs.getLogger('godot-optimizer:scene')
 
@@ -113,6 +130,7 @@ async function processScene(
     startedAt: new Date(),
     finishedAt: null,
     errors: [],
+    godotLogs: [],
     individualAssets: { total: 0, successful: 0, failed: 0 },
     result: null
   }
@@ -156,7 +174,7 @@ async function processScene(
           optimizedAssets: 0,
           individualZips: []
         }
-        return
+        return report
       }
       throw error
     }
@@ -170,7 +188,28 @@ async function processScene(
     // 3. Wait for metadata processing to complete
     const metadataResult = await assetServer.waitForCompletion(metadataResponse.batch_id, timeoutMs)
 
+    // Collect job logs from metadata result
+    for (const job of metadataResult.jobs || []) {
+      if (job.error) {
+        report.godotLogs.push(`[${job.hash}] ${job.status}: ${job.error}`)
+      } else {
+        report.godotLogs.push(`[${job.hash}] ${job.status} (${job.elapsed_secs}s)`)
+      }
+    }
+
     if (metadataResult.status === 'failed') {
+      // Check if this is "No assets completed successfully" - treat as success with 0 assets
+      const errorMsg = metadataResult.error || ''
+      if (errorMsg.includes('No assets completed successfully') || errorMsg.includes('No processable assets')) {
+        logger.info('Scene has no processable assets (from metadata result)', { entityId })
+        report.finishedAt = new Date()
+        report.result = {
+          success: true,
+          optimizedAssets: 0,
+          individualZips: []
+        }
+        return report
+      }
       throw new Error(metadataResult.error || 'Metadata processing failed')
     }
 
@@ -202,7 +241,7 @@ async function processScene(
           optimizedAssets: 0,
           individualZips: []
         }
-        return
+        return report
       }
 
       // Parse error is a real failure
@@ -236,7 +275,7 @@ async function processScene(
         metadataZipPath: metadataS3Key,
         individualZips: [metadataS3Key]
       }
-      return
+      return report
     }
 
     logger.info('Found assets to bundle individually', {
@@ -279,6 +318,13 @@ async function processScene(
 
           const result = await assetServer.waitForCompletion(response.batch_id, timeoutMs)
 
+          // Collect job logs
+          for (const job of result.jobs || []) {
+            if (job.error) {
+              report.godotLogs.push(`[${assetHash}] ${job.status}: ${job.error}`)
+            }
+          }
+
           if (result.status === 'completed' && result.zip_path) {
             const s3Key = `${assetHash}-mobile.zip`
             await storage.storeFile(s3Key, result.zip_path)
@@ -286,16 +332,20 @@ async function processScene(
             await fs.rm(result.zip_path, { force: true }).catch(() => {})
             report.individualAssets.successful++
             individualZips.push(s3Key)
+            report.godotLogs.push(`[${assetHash}] completed successfully`)
             return { success: true, hash: assetHash, s3Key }
           } else {
             report.individualAssets.failed++
-            report.errors.push(`Asset ${assetHash} failed: ${result.error || 'Unknown error'}`)
+            const errorMsg = result.error || 'Unknown error'
+            report.errors.push(`Asset ${assetHash} failed: ${errorMsg}`)
+            report.godotLogs.push(`[${assetHash}] failed: ${errorMsg}`)
             return { success: false, hash: assetHash, error: result.error }
           }
         } catch (error) {
           report.individualAssets.failed++
           const errorMsg = error instanceof Error ? error.message : String(error)
           report.errors.push(`Asset ${assetHash} failed: ${errorMsg}`)
+          report.godotLogs.push(`[${assetHash}] exception: ${errorMsg}`)
           return { success: false, hash: assetHash, error: errorMsg }
         }
       })
@@ -328,16 +378,14 @@ async function processScene(
     }
 
     report.finishedAt = new Date()
+    return report
   } catch (error) {
     logger.error(`Error processing scene ${entityId}`)
     logger.error(error as any)
     report.errors.push(error instanceof Error ? error.message : String(error))
     report.finishedAt = new Date()
     report.result = { success: false }
-
-    throw error
-  } finally {
-    await storeReport(report, tempDir, storage, logger)
+    return report
   }
 }
 
@@ -348,7 +396,7 @@ async function processWearableOrEmote(
   entity: DeploymentToSqs,
   entityType: 'wearable' | 'emote',
   components: Pick<AppComponents, 'logs' | 'config' | 'storage' | 'assetServer' | 'fetch'>
-): Promise<void> {
+): Promise<ProcessReport> {
   const { logs, storage, assetServer, config, fetch } = components
   const logger = logs.getLogger(`godot-optimizer:${entityType}`)
 
@@ -371,6 +419,7 @@ async function processWearableOrEmote(
     startedAt: new Date(),
     finishedAt: null,
     errors: [],
+    godotLogs: [],
     individualAssets: { total: 1, successful: 0, failed: 0 },
     result: null
   }
@@ -422,7 +471,7 @@ async function processWearableOrEmote(
           optimizedAssets: 0,
           individualZips: []
         }
-        return
+        return report
       }
 
       // Use first GLTF (for standard mode, we process the whole entity)
@@ -470,6 +519,15 @@ async function processWearableOrEmote(
     // 4. Wait for completion
     const result = await assetServer.waitForCompletion(response.batch_id, timeoutMs)
 
+    // Collect job logs
+    for (const job of result.jobs || []) {
+      if (job.error) {
+        report.godotLogs.push(`[${job.hash}] ${job.status}: ${job.error}`)
+      } else {
+        report.godotLogs.push(`[${job.hash}] ${job.status} (${job.elapsed_secs}s)`)
+      }
+    }
+
     if (result.status === 'failed') {
       // Log detailed job status for debugging
       const jobErrors = result.jobs
@@ -482,6 +540,21 @@ async function processWearableOrEmote(
         error: result.error || 'unknown',
         jobErrors: jobErrors || 'none'
       })
+
+      // Check if this is "No assets completed successfully" - treat as success with 0 assets
+      const errorMsg = result.error || ''
+      if (errorMsg.includes('No assets completed successfully') || errorMsg.includes('No processable assets')) {
+        logger.info(`${entityType} has no processable assets`, { entityId, gltfHash })
+        report.finishedAt = new Date()
+        report.individualAssets.total = 0
+        report.result = {
+          success: true,
+          optimizedAssets: 0,
+          individualZips: []
+        }
+        return report
+      }
+
       throw new Error(result.error || 'Processing failed')
     }
 
@@ -497,6 +570,7 @@ async function processWearableOrEmote(
     logger.info('Uploaded ZIP', { gltfHash, entityType, s3Key })
 
     report.individualAssets.successful = 1
+    report.godotLogs.push(`[${gltfHash}] completed successfully`)
     report.result = {
       success: true,
       batchId: response.batch_id,
@@ -505,17 +579,17 @@ async function processWearableOrEmote(
     }
 
     report.finishedAt = new Date()
+    return report
   } catch (error) {
     logger.error(`Error processing ${entityType} ${entityId}`)
     logger.error(error as any)
-    report.errors.push(error instanceof Error ? error.message : String(error))
+    const errorMsg = error instanceof Error ? error.message : String(error)
+    report.errors.push(errorMsg)
+    report.godotLogs.push(`[${entityId}] exception: ${errorMsg}`)
     report.finishedAt = new Date()
     report.result = { success: false }
     report.individualAssets.failed = 1
-
-    throw error
-  } finally {
-    await storeReport(report, tempDir, storage, logger)
+    return report
   }
 }
 
