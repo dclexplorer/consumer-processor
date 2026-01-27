@@ -169,7 +169,9 @@ async function handleProfile(
     for (let i = 0; i < gltfAssets.length; i += concurrentLimit) {
       const batch = gltfAssets.slice(i, i + concurrentLimit)
 
-      logger.info(`Processing batch ${Math.floor(i / concurrentLimit) + 1}/${Math.ceil(gltfAssets.length / concurrentLimit)} (${batch.length} assets)`)
+      logger.info(
+        `Processing batch ${Math.floor(i / concurrentLimit) + 1}/${Math.ceil(gltfAssets.length / concurrentLimit)} (${batch.length} assets)`
+      )
 
       const batchPromises = batch.map(async (asset) => {
         const variant = asset.gltfFile.toLowerCase().includes('male/')
@@ -331,17 +333,25 @@ export async function initComponents(): Promise<AppComponents> {
     }
   )
   const statusChecks = await createStatusCheckComponent({ server, config })
-  const fetch = await createFetchComponent()
+  const fetch = await createFetchComponent({ config, logs })
 
   await instrumentHttpServerWithMetrics({ metrics, server, config })
 
   const sqsQueue = await config.getString('TASK_QUEUE')
   const prioritySqsQueue = await config.getString('PRIORITY_TASK_QUEUE')
+  const wearableSqsQueue = await config.getString('WEARABLE_TASK_QUEUE')
+  const emoteSqsQueue = await config.getString('EMOTE_TASK_QUEUE')
   const awsEndpoint = await config.getString('AWS_ENDPOINT')
   const taskQueue = sqsQueue
     ? createSqsAdapter<DeploymentToSqs>(
         { logs, metrics },
-        { queueUrl: sqsQueue, priorityQueueUrl: prioritySqsQueue, endpoint: awsEndpoint }
+        {
+          queueUrl: sqsQueue,
+          priorityQueueUrl: prioritySqsQueue,
+          wearableQueueUrl: wearableSqsQueue,
+          emoteQueueUrl: emoteSqsQueue,
+          endpoint: awsEndpoint
+        }
       )
     : createMemoryQueueAdapter<DeploymentToSqs>({ logs, metrics }, { queueName: 'ConversionTaskQueue' })
 

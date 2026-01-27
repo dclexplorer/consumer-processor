@@ -83,9 +83,23 @@ export function createMemoryQueueAdapter<T>(
   }
 }
 
+export interface SqsAdapterOptions {
+  queueUrl: string
+  priorityQueueUrl?: string
+  wearableQueueUrl?: string
+  emoteQueueUrl?: string
+  queueRegion?: string
+  endpoint?: string
+}
+
+interface QueueInfo {
+  url: string
+  name: string
+}
+
 export function createSqsAdapter<T>(
   components: Pick<AppComponents, 'logs' | 'metrics'>,
-  options: { queueUrl: string; priorityQueueUrl?: string; queueRegion?: string; endpoint?: string }
+  options: SqsAdapterOptions
 ): ITaskQueue<T> {
   const logger = components.logs.getLogger(options.queueUrl)
   const sqs = new SQSClient({
@@ -93,39 +107,68 @@ export function createSqsAdapter<T>(
     ...(options.endpoint && { endpoint: options.endpoint })
   })
 
-  async function receiveMessage(quantityOfMessages: number): Promise<{ response: any | undefined; queueUsed: string }> {
-    let response
-    let queueUsed = ''
+  // Build list of queues for round-robin polling
+  // Priority queue is always checked first, then round-robin through entity type queues
+  const entityQueues: QueueInfo[] = []
+  if (options.queueUrl) entityQueues.push({ url: options.queueUrl, name: 'scene' })
+  if (options.wearableQueueUrl) entityQueues.push({ url: options.wearableQueueUrl, name: 'wearable' })
+  if (options.emoteQueueUrl) entityQueues.push({ url: options.emoteQueueUrl, name: 'emote' })
 
-    if (options.priorityQueueUrl) {
-      try {
-        response = await sqs.send(
-          new ReceiveMessageCommand({
-            MaxNumberOfMessages: quantityOfMessages,
-            MessageAttributeNames: ['All'],
-            QueueUrl: options.priorityQueueUrl,
-            WaitTimeSeconds: 15,
-            VisibilityTimeout: 3 * 3600
-          })
-        )
-        queueUsed = options.priorityQueueUrl
-      } catch {}
-    }
+  let currentQueueIndex = 0
 
-    if (!response || !response.Messages || response.Messages.length < 1) {
-      response = await sqs.send(
+  async function tryReceiveFromQueue(queueUrl: string, waitTimeSeconds: number): Promise<any | undefined> {
+    try {
+      const response = await sqs.send(
         new ReceiveMessageCommand({
-          MaxNumberOfMessages: quantityOfMessages,
+          MaxNumberOfMessages: 1,
           MessageAttributeNames: ['All'],
-          QueueUrl: options.queueUrl,
-          WaitTimeSeconds: 15,
+          QueueUrl: queueUrl,
+          WaitTimeSeconds: waitTimeSeconds,
           VisibilityTimeout: 3 * 3600
         })
       )
-      queueUsed = options.queueUrl
+      return response?.Messages && response.Messages.length > 0 ? response : undefined
+    } catch (err) {
+      logger.debug(`Failed to receive from queue ${queueUrl}`, {
+        error: err instanceof Error ? err.message : 'Unknown'
+      })
+      return undefined
+    }
+  }
+
+  async function receiveMessage(quantityOfMessages: number): Promise<{ response: any | undefined; queueUsed: string }> {
+    // First, always check the priority queue
+    if (options.priorityQueueUrl) {
+      const response = await tryReceiveFromQueue(options.priorityQueueUrl, 1)
+      if (response) {
+        logger.info('Processing from priority queue')
+        return { response, queueUsed: options.priorityQueueUrl }
+      }
     }
 
-    return { response, queueUsed }
+    // Round-robin through entity type queues
+    if (entityQueues.length === 0) {
+      return { response: undefined, queueUsed: '' }
+    }
+
+    // Try each queue starting from current index
+    for (let i = 0; i < entityQueues.length; i++) {
+      const queueIndex = (currentQueueIndex + i) % entityQueues.length
+      const queue = entityQueues[queueIndex]
+      const isLastAttempt = i === entityQueues.length - 1
+
+      const response = await tryReceiveFromQueue(queue.url, isLastAttempt ? 15 : 1)
+      if (response) {
+        logger.info(`Processing from ${queue.name} queue`)
+        // Move to next queue for next poll (round-robin)
+        currentQueueIndex = (queueIndex + 1) % entityQueues.length
+        return { response, queueUsed: queue.url }
+      }
+    }
+
+    // No messages found in any queue, advance to next queue for fairness
+    currentQueueIndex = (currentQueueIndex + 1) % entityQueues.length
+    return { response: undefined, queueUsed: '' }
   }
 
   return {

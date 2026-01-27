@@ -158,17 +158,56 @@ async function processScene(
     })
 
     // 4. Extract metadata from ZIP to get all asset hashes
-    const metadata = await extractMetadataFromZip(metadataResult.zip_path, entityId)
-    if (!metadata) {
-      throw new Error('Could not extract metadata from ZIP')
+    const metadataExtraction = extractMetadataFromZip(metadataResult.zip_path, entityId)
+
+    // Handle empty scenes (no GLTF/images to process)
+    if (!metadataExtraction.success) {
+      if (metadataExtraction.reason === 'empty_zip' || metadataExtraction.reason === 'metadata_not_found') {
+        // This is likely a scene with no optimizable assets - treat as success
+        logger.info('Scene has no optimizable assets', {
+          entityId,
+          reason: metadataExtraction.reason,
+          zipEntries: metadataExtraction.entries.join(', ') || '(empty)'
+        })
+
+        report.finishedAt = new Date()
+        report.result = {
+          success: true,
+          optimizedAssets: 0,
+          individualZips: []
+        }
+        return
+      }
+
+      // Parse error is a real failure
+      throw new Error(`Could not extract metadata from ZIP: ${metadataExtraction.reason} - ${metadataExtraction.error || 'unknown error'}`)
     }
 
+    const metadata = metadataExtraction.metadata
     const gltfHashes = new Set(Object.keys(metadata.externalSceneDependencies || {}))
     const allHashes = new Set(metadata.optimizedContent || [])
     const textureHashes = new Set([...allHashes].filter((h) => !gltfHashes.has(h)))
 
     const allAssetHashes = [...gltfHashes, ...textureHashes]
     report.individualAssets.total = allAssetHashes.length
+
+    // Handle scenes where metadata exists but has no assets
+    if (allAssetHashes.length === 0) {
+      logger.info('Scene metadata exists but has no assets to process', { entityId })
+
+      // Still upload the metadata ZIP even if empty
+      const metadataS3Key = `${entityId}-mobile.zip`
+      await storage.storeFile(metadataS3Key, metadataResult.zip_path)
+
+      report.finishedAt = new Date()
+      report.result = {
+        success: true,
+        optimizedAssets: 0,
+        metadataZipPath: metadataS3Key,
+        individualZips: [metadataS3Key]
+      }
+      return
+    }
 
     logger.info('Found assets to bundle individually', {
       entityId,
@@ -336,8 +375,7 @@ async function processWearableOrEmote(
       const entityDefinition = await fetchEntityDefinition(entityId, contentServerUrl, fetch)
 
       const gltfFiles = entityDefinition.content.filter(
-        (c: { file: string }) =>
-          c.file.toLowerCase().endsWith('.glb') || c.file.toLowerCase().endsWith('.gltf')
+        (c: { file: string }) => c.file.toLowerCase().endsWith('.glb') || c.file.toLowerCase().endsWith('.gltf')
       )
 
       if (gltfFiles.length === 0) {
@@ -440,20 +478,35 @@ async function fetchEntityDefinition(
   return (await response.json()) as { id: string; content: Array<{ file: string; hash: string }> }
 }
 
-async function extractMetadataFromZip(zipPath: string, sceneHash: string): Promise<SceneMetadata | null> {
+type MetadataExtractionResult =
+  | { success: true; metadata: SceneMetadata }
+  | { success: false; reason: 'empty_zip' | 'metadata_not_found' | 'parse_error'; entries: string[]; error?: string }
+
+function extractMetadataFromZip(zipPath: string, sceneHash: string): MetadataExtractionResult {
   try {
     const zip = new AdmZip(zipPath)
+    const entries = zip.getEntries().map((e) => e.entryName)
     const metadataFilename = `${sceneHash}-optimized.json`
     const entry = zip.getEntry(metadataFilename)
 
+    if (entries.length === 0) {
+      return { success: false, reason: 'empty_zip', entries }
+    }
+
     if (!entry) {
-      return null
+      return { success: false, reason: 'metadata_not_found', entries }
     }
 
     const content = zip.readAsText(entry)
-    return JSON.parse(content) as SceneMetadata
-  } catch {
-    return null
+    const metadata = JSON.parse(content) as SceneMetadata
+    return { success: true, metadata }
+  } catch (error) {
+    return {
+      success: false,
+      reason: 'parse_error',
+      entries: [],
+      error: error instanceof Error ? error.message : String(error)
+    }
   }
 }
 

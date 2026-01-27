@@ -15,6 +15,7 @@ export interface HeartbeatData {
   progressPercent?: number
   startedAt?: string
   isPriority?: boolean
+  entityType?: 'scene' | 'wearable' | 'emote'
 }
 
 export interface JobCompleteData {
@@ -25,6 +26,7 @@ export interface JobCompleteData {
   durationMs: number
   errorMessage?: string
   isPriority?: boolean
+  entityType?: 'scene' | 'wearable' | 'emote'
 }
 
 interface MonitoringReporterComponents {

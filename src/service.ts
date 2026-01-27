@@ -50,6 +50,7 @@ export async function main(program: Lifecycle.EntryPointParameters<AppComponents
     while (opt.isRunning) {
       await components.taskQueue.consumeAndProcessJob(async (job, message) => {
         const sceneId = job.entity.entityId
+        const entityType = (job.entity as any).entityType || 'scene'
         const startedAt = new Date().toISOString()
         const startTime = Date.now()
         const isPriority = message.isPriority
@@ -65,7 +66,8 @@ export async function main(program: Lifecycle.EntryPointParameters<AppComponents
           currentStep: 'Starting',
           progressPercent: 0,
           startedAt,
-          isPriority
+          isPriority,
+          entityType
         })
 
         try {
@@ -94,7 +96,8 @@ export async function main(program: Lifecycle.EntryPointParameters<AppComponents
             startedAt,
             completedAt: new Date().toISOString(),
             durationMs: Date.now() - startTime,
-            isPriority
+            isPriority,
+            entityType
           })
         } catch (error) {
           logger.error(`Error processing job ${job.entity.entityId}`)
@@ -108,7 +111,8 @@ export async function main(program: Lifecycle.EntryPointParameters<AppComponents
             completedAt: new Date().toISOString(),
             durationMs: Date.now() - startTime,
             errorMessage: error instanceof Error ? error.message : 'Unknown error',
-            isPriority
+            isPriority,
+            entityType
           })
         }
       })
