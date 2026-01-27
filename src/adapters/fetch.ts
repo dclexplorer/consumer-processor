@@ -1,6 +1,23 @@
 import { IFetchComponent } from '@well-known-components/http-server'
 import { IConfigComponent, ILoggerComponent } from '@well-known-components/interfaces'
 import * as nodeFetch from 'node-fetch'
+import http from 'http'
+import https from 'https'
+
+// Create HTTP agents with limited connection pooling to prevent memory leaks
+const httpAgent = new http.Agent({
+  keepAlive: true,
+  maxSockets: 10,
+  maxFreeSockets: 5,
+  timeout: 60000
+})
+
+const httpsAgent = new https.Agent({
+  keepAlive: true,
+  maxSockets: 10,
+  maxFreeSockets: 5,
+  timeout: 60000
+})
 
 // Error codes that indicate transient network failures
 const RETRYABLE_ERROR_CODES = new Set([
@@ -84,10 +101,15 @@ export async function createFetchComponent(deps?: {
         const timeoutId = setTimeout(() => controller.abort(), fetchConfig.timeoutMs)
 
         try {
-          // Merge abort signal with any existing signal
+          // Select appropriate agent based on protocol
+          const isHttps = urlString.startsWith('https')
+          const agent = isHttps ? httpsAgent : httpAgent
+
+          // Merge abort signal and agent with any existing options
           const mergedInit: nodeFetch.RequestInit = {
             ...init,
-            signal: controller.signal as nodeFetch.RequestInit['signal']
+            signal: controller.signal as nodeFetch.RequestInit['signal'],
+            agent
           }
 
           const response = await nodeFetch.default(url, mergedInit)
@@ -95,6 +117,12 @@ export async function createFetchComponent(deps?: {
 
           // Check for retryable HTTP status
           if (isRetryableStatus(response.status) && attempt < fetchConfig.maxRetries) {
+            // Consume and discard the response body to free up the connection
+            try {
+              await response.text()
+            } catch {
+              // Ignore errors when consuming body
+            }
             const delay = calculateDelay(attempt, fetchConfig)
             logger?.warn(
               `Retryable HTTP status ${response.status} for ${urlString}, attempt ${attempt + 1}/${fetchConfig.maxRetries + 1}, retrying in ${delay}ms`

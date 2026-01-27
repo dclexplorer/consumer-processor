@@ -1,5 +1,9 @@
 import { IFetchComponent } from '@well-known-components/http-server'
 import { ILoggerComponent } from '@well-known-components/interfaces'
+import { exec } from 'child_process'
+import { promisify } from 'util'
+
+const execAsync = promisify(exec)
 
 export type AssetType = 'scene' | 'wearable' | 'emote' | 'texture'
 
@@ -9,6 +13,7 @@ export interface IAssetServerComponent {
   processAssets(params: ProcessAssetsParams): Promise<ProcessAssetsResponse>
   getBatchStatus(batchId: string): Promise<BatchStatus>
   waitForCompletion(batchId: string, timeoutMs?: number): Promise<BatchStatus>
+  restartGodot(): Promise<boolean>
 }
 
 export type ProcessSceneParams = {
@@ -85,6 +90,8 @@ export function createAssetServerComponent(
   async function isReady(): Promise<boolean> {
     try {
       const response = await fetch.fetch(`${baseUrl}/health`)
+      // Consume response body to free the connection
+      await response.text().catch(() => {})
       return response.ok
     } catch {
       return false
@@ -173,10 +180,57 @@ export function createAssetServerComponent(
         return status
       }
 
-      await new Promise((resolve) => setTimeout(resolve, pollIntervalMs))
+      // Use a cancellable sleep pattern
+      await new Promise<void>((resolve) => {
+        const timeoutId = setTimeout(() => resolve(), pollIntervalMs)
+        // Ensure timeout is unreferenced so it doesn't keep the process alive
+        if (timeoutId.unref) {
+          timeoutId.unref()
+        }
+      })
     }
 
     throw new Error(`Timeout waiting for batch ${batchId} to complete after ${timeoutMs}ms`)
+  }
+
+  async function restartGodot(): Promise<boolean> {
+    const port = process.env.ASSET_SERVER_PORT || '8080'
+    logger.info('Restarting Godot asset-server...')
+
+    try {
+      // Kill existing Godot process - use simpler pattern
+      try {
+        await execAsync('pkill -9 -f "decentraland.godot.client" || true')
+        logger.info('Sent kill signal to Godot process')
+      } catch {
+        // Ignore errors - process might not exist
+      }
+
+      // Wait for process to fully terminate
+      await new Promise((resolve) => setTimeout(resolve, 2000))
+
+      // Start new Godot process in background
+      const godotCmd = `/app/decentraland.godot.client.x86_64 --headless --asset-server --asset-server-port ${port}`
+      const child = exec(godotCmd)
+
+      // Detach from child process - we don't need to track it
+      child.unref()
+
+      // Wait for server to be ready (up to 60 seconds)
+      for (let i = 0; i < 60; i++) {
+        await new Promise((resolve) => setTimeout(resolve, 1000))
+        if (await isReady()) {
+          logger.info('Godot asset-server is ready after restart')
+          return true
+        }
+      }
+
+      logger.error('Godot asset-server failed to become ready after restart')
+      return false
+    } catch (error) {
+      logger.error('Failed to restart Godot', { error: error instanceof Error ? error.message : String(error) })
+      return false
+    }
   }
 
   return {
@@ -184,6 +238,7 @@ export function createAssetServerComponent(
     processScene,
     processAssets,
     getBatchStatus,
-    waitForCompletion
+    waitForCompletion,
+    restartGodot
   }
 }

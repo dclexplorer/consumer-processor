@@ -16,6 +16,7 @@ import { AwsCredentialIdentity } from '@smithy/types'
 import { createMonitoringReporter } from './adapters/monitoring-reporter'
 import { getProcessMethod } from './service'
 import { createAssetServerComponent } from './adapters/asset-server'
+import { rm } from 'fs/promises'
 
 // Helper function to convert URN with token ID to pointer without token ID
 function urnToPointer(urn: string): string {
@@ -63,6 +64,8 @@ async function handleProfile(
 
     const profileResponse = await fetch.fetch(profileUrl)
     if (!profileResponse.ok) {
+      // Consume body to free the connection
+      await profileResponse.text().catch(() => {})
       throw new Error(`Failed to fetch profile: ${profileResponse.statusText}`)
     }
 
@@ -111,6 +114,8 @@ async function handleProfile(
     })
 
     if (!entitiesResponse.ok) {
+      // Consume body to free the connection
+      await entitiesResponse.text().catch(() => {})
       throw new Error(`Failed to fetch entities: ${entitiesResponse.statusText}`)
     }
 
@@ -201,6 +206,8 @@ async function handleProfile(
           if (result.status === 'completed' && result.zip_path) {
             const s3Key = `${asset.gltfHash}-mobile.zip`
             await storage.storeFile(s3Key, result.zip_path)
+            // Clean up temp file from asset-server
+            await rm(result.zip_path, { force: true }).catch(() => {})
             logger.info(`Completed: ${asset.pointer} ${variant} -> ${s3Key}`)
             return { success: true, hash: asset.gltfHash }
           } else {
@@ -250,6 +257,8 @@ async function handleEntityId(
       })
 
       if (!response.ok) {
+        // Consume body to free the connection
+        await response.text().catch(() => {})
         throw new Error(`Failed to fetch entity ID: ${response.statusText}`)
       }
 
@@ -282,6 +291,8 @@ async function handleEntityId(
       })
 
       if (!response.ok) {
+        // Consume body to free the connection
+        await response.text().catch(() => {})
         throw new Error(`Failed to fetch world data: ${response.statusText}`)
       }
 

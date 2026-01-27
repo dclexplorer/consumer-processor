@@ -54,7 +54,7 @@ export async function godotOptimizer(
   _msg: TaskQueueMessage,
   components: Pick<AppComponents, 'logs' | 'config' | 'storage' | 'assetServer' | 'fetch'>
 ): Promise<void> {
-  const { logs } = components
+  const { logs, assetServer } = components
   const logger = logs.getLogger('godot-optimizer')
 
   // Cast to extended type to access entityType
@@ -66,17 +66,25 @@ export async function godotOptimizer(
     entityType
   })
 
-  switch (entityType) {
-    case 'scene':
-      await processScene(entity, components)
-      break
-    case 'wearable':
-    case 'emote':
-      await processWearableOrEmote(entity, entityType, components)
-      break
-    default:
-      logger.warn('Unknown entity type, defaulting to scene processing', { entityType })
-      await processScene(entity, components)
+  try {
+    switch (entityType) {
+      case 'scene':
+        await processScene(entity, components)
+        break
+      case 'wearable':
+      case 'emote':
+        await processWearableOrEmote(entity, entityType, components)
+        break
+      default:
+        logger.warn('Unknown entity type, defaulting to scene processing', { entityType })
+        await processScene(entity, components)
+    }
+  } finally {
+    // Restart Godot after each entity to free memory
+    logger.info('Processing complete, restarting Godot to free memory', {
+      entityId: entity.entity.entityId
+    })
+    await assetServer.restartGodot()
   }
 }
 
@@ -124,16 +132,34 @@ async function processScene(
     }
 
     const timeoutMs = parseInt((await config.getString('ASSET_SERVER_TIMEOUT_MS')) ?? '600000', 10)
-    const concurrentBundles = parseInt((await config.getString('ASSET_SERVER_CONCURRENT_BUNDLES')) ?? '16', 10)
+    const concurrentBundles = parseInt((await config.getString('ASSET_SERVER_CONCURRENT_BUNDLES')) ?? '4', 10)
 
     // 2. Process scene with pack_hashes=[] to get metadata only
     logger.info('Processing scene for metadata', { entityId, contentBaseUrl })
-    const metadataResponse = await assetServer.processScene({
-      sceneHash: entityId,
-      contentBaseUrl,
-      outputHash: entityId,
-      packHashes: [] // Empty array = metadata only
-    })
+
+    let metadataResponse
+    try {
+      metadataResponse = await assetServer.processScene({
+        sceneHash: entityId,
+        contentBaseUrl,
+        outputHash: entityId,
+        packHashes: [] // Empty array = metadata only
+      })
+    } catch (error) {
+      // Check if this is a "no processable assets" error - treat as success
+      const errorMsg = error instanceof Error ? error.message : String(error)
+      if (errorMsg.includes('No processable assets') || errorMsg.includes('400')) {
+        logger.info('Scene has no processable assets', { entityId })
+        report.finishedAt = new Date()
+        report.result = {
+          success: true,
+          optimizedAssets: 0,
+          individualZips: []
+        }
+        return
+      }
+      throw error
+    }
 
     logger.info('Metadata processing submitted', {
       entityId,
@@ -180,7 +206,9 @@ async function processScene(
       }
 
       // Parse error is a real failure
-      throw new Error(`Could not extract metadata from ZIP: ${metadataExtraction.reason} - ${metadataExtraction.error || 'unknown error'}`)
+      throw new Error(
+        `Could not extract metadata from ZIP: ${metadataExtraction.reason} - ${metadataExtraction.error || 'unknown error'}`
+      )
     }
 
     const metadata = metadataExtraction.metadata
@@ -198,6 +226,8 @@ async function processScene(
       // Still upload the metadata ZIP even if empty
       const metadataS3Key = `${entityId}-mobile.zip`
       await storage.storeFile(metadataS3Key, metadataResult.zip_path)
+      // Clean up temp file from asset-server
+      await fs.rm(metadataResult.zip_path, { force: true }).catch(() => {})
 
       report.finishedAt = new Date()
       report.result = {
@@ -219,6 +249,8 @@ async function processScene(
     // 5. Upload metadata ZIP to storage
     const metadataS3Key = `${entityId}-mobile.zip`
     await storage.storeFile(metadataS3Key, metadataResult.zip_path)
+    // Clean up temp file from asset-server
+    await fs.rm(metadataResult.zip_path, { force: true }).catch(() => {})
     logger.info('Uploaded metadata ZIP', { entityId, s3Key: metadataS3Key })
 
     // 6. Process each asset individually (with concurrency limit)
@@ -250,6 +282,8 @@ async function processScene(
           if (result.status === 'completed' && result.zip_path) {
             const s3Key = `${assetHash}-mobile.zip`
             await storage.storeFile(s3Key, result.zip_path)
+            // Clean up temp file from asset-server
+            await fs.rm(result.zip_path, { force: true }).catch(() => {})
             report.individualAssets.successful++
             individualZips.push(s3Key)
             return { success: true, hash: assetHash, s3Key }
@@ -379,7 +413,16 @@ async function processWearableOrEmote(
       )
 
       if (gltfFiles.length === 0) {
-        throw new Error(`No GLTF/GLB files found in ${entityType}`)
+        // No GLTF/GLB files - treat as success with 0 assets
+        logger.info(`No GLTF/GLB files found in ${entityType}, skipping`, { entityId, entityType })
+        report.finishedAt = new Date()
+        report.individualAssets.total = 0
+        report.result = {
+          success: true,
+          optimizedAssets: 0,
+          individualZips: []
+        }
+        return
       }
 
       // Use first GLTF (for standard mode, we process the whole entity)
@@ -428,6 +471,17 @@ async function processWearableOrEmote(
     const result = await assetServer.waitForCompletion(response.batch_id, timeoutMs)
 
     if (result.status === 'failed') {
+      // Log detailed job status for debugging
+      const jobErrors = result.jobs
+        ?.filter((j) => j.status === 'failed')
+        .map((j) => `${j.job_id}: ${j.error || 'unknown'}`)
+        .join('; ')
+      logger.error('Asset processing failed', {
+        gltfHash,
+        batchId: response.batch_id,
+        error: result.error || 'unknown',
+        jobErrors: jobErrors || 'none'
+      })
       throw new Error(result.error || 'Processing failed')
     }
 
@@ -438,6 +492,8 @@ async function processWearableOrEmote(
     // 5. Upload ZIP to storage
     const s3Key = `${gltfHash}-mobile.zip`
     await storage.storeFile(s3Key, result.zip_path)
+    // Clean up temp file from asset-server
+    await fs.rm(result.zip_path, { force: true }).catch(() => {})
     logger.info('Uploaded ZIP', { gltfHash, entityType, s3Key })
 
     report.individualAssets.successful = 1
@@ -472,6 +528,8 @@ async function fetchEntityDefinition(
   const response = await fetch.fetch(url)
 
   if (!response.ok) {
+    // Consume body to free the connection
+    await response.text().catch(() => {})
     throw new Error(`Failed to fetch entity definition: ${response.status}`)
   }
 
@@ -483,8 +541,9 @@ type MetadataExtractionResult =
   | { success: false; reason: 'empty_zip' | 'metadata_not_found' | 'parse_error'; entries: string[]; error?: string }
 
 function extractMetadataFromZip(zipPath: string, sceneHash: string): MetadataExtractionResult {
+  let zip: AdmZip | null = null
   try {
-    const zip = new AdmZip(zipPath)
+    zip = new AdmZip(zipPath)
     const entries = zip.getEntries().map((e) => e.entryName)
     const metadataFilename = `${sceneHash}-optimized.json`
     const entry = zip.getEntry(metadataFilename)
@@ -507,6 +566,9 @@ function extractMetadataFromZip(zipPath: string, sceneHash: string): MetadataExt
       entries: [],
       error: error instanceof Error ? error.message : String(error)
     }
+  } finally {
+    // Help garbage collector by explicitly dereferencing
+    zip = null
   }
 }
 
@@ -516,8 +578,8 @@ async function storeReport(
   storage: AppComponents['storage'],
   logger: ReturnType<AppComponents['logs']['getLogger']>
 ): Promise<void> {
+  const reportPath = path.join(tempDir, `${report.entityId}-report.json`)
   try {
-    const reportPath = path.join(tempDir, `${report.entityId}-report.json`)
     await fs.writeFile(reportPath, JSON.stringify(report, null, 2))
 
     const s3ReportKey = `${report.entityId}-report.json`
@@ -526,5 +588,8 @@ async function storeReport(
   } catch (reportError) {
     logger.error(`Failed to store report for ${report.entityId}`)
     logger.error(reportError as any)
+  } finally {
+    // Clean up temp report file
+    await fs.rm(reportPath, { force: true }).catch(() => {})
   }
 }

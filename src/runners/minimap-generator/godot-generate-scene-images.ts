@@ -99,10 +99,13 @@ export async function godotGenerateSceneImages(
       `--scene-renderer --scene-input-file ${inputDataPath}`,
       timeout
     )
-    centersToProcess.forEach(async function (center) {
-      await writeFile(`./output/${center}-stdout.log`, result.stdout)
-      await writeFile(`./output/${center}-stderr.log`, result.stderr)
-    })
+    // Write logs for each center - await all writes
+    await Promise.all(
+      centersToProcess.map(async (center) => {
+        await writeFile(`./output/${center}-stdout.log`, result.stdout)
+        await writeFile(`./output/${center}-stderr.log`, result.stderr)
+      })
+    )
   } catch (err) {
     logger.error('Failed to run godot')
   } finally {

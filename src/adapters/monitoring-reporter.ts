@@ -65,24 +65,28 @@ export function createMonitoringReporter(
       return
     }
 
+    let controller: AbortController | null = new AbortController()
+    const timeoutId = setTimeout(() => controller?.abort(), 5000)
+
     try {
       const url = `${monitoringUrl}${endpoint}`
-      const controller = new AbortController()
-      const timeoutId = setTimeout(() => controller.abort(), 5000)
 
-      await fetch.fetch(url, {
+      const response = await fetch.fetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ ...data, secret: monitoringSecret }),
         signal: controller.signal
       })
-
-      clearTimeout(timeoutId)
+      // Consume response body to free the connection
+      await response.text().catch(() => {})
     } catch (error) {
       // Silently ignore - monitoring should never block pipeline
       logger.debug('Monitoring report failed (non-blocking)', {
         error: error instanceof Error ? error.message : 'Unknown error'
       })
+    } finally {
+      clearTimeout(timeoutId)
+      controller = null
     }
   }
 

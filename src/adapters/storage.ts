@@ -1,5 +1,7 @@
 import { IBaseComponent } from '@well-known-components/interfaces'
-import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3'
+import { S3Client } from '@aws-sdk/client-s3'
+import { Upload } from '@aws-sdk/lib-storage'
+import { createReadStream } from 'fs'
 import { mkdir, readFile, writeFile } from 'fs/promises'
 import path from 'path'
 import { AppComponents } from '../types'
@@ -28,20 +30,32 @@ export async function createS3StorageComponent(
   return {
     storeFile: async function (key: string, filePath: string) {
       const keyWithPrefix = `${formattedPrefix}${key}`
+      let fileStream: ReturnType<typeof createReadStream> | null = null
 
       try {
-        const fileContent = await readFile(filePath)
-        const command = new PutObjectCommand({
-          Bucket: bucketName,
-          Key: keyWithPrefix,
-          Body: fileContent
+        // Use streaming upload to avoid loading entire file into memory
+        fileStream = createReadStream(filePath)
+
+        const upload = new Upload({
+          client: s3Client,
+          params: {
+            Bucket: bucketName,
+            Key: keyWithPrefix,
+            Body: fileStream
+          }
         })
 
-        await s3Client.send(command)
+        await upload.done()
         logger.info(`Stored file ${keyWithPrefix} in S3`)
       } catch (error) {
         logger.error(`Error storing file ${keyWithPrefix} in S3`)
         logger.error(error as any)
+      } finally {
+        // Ensure stream is closed
+        if (fileStream) {
+          fileStream.destroy()
+          fileStream = null
+        }
       }
     },
 
@@ -52,20 +66,23 @@ export async function createS3StorageComponent(
         let success = false
 
         while (attempt < 3 && !success) {
+          let fileStream: ReturnType<typeof createReadStream> | null = null
           try {
-            // Read the file content
-            const fileContent = await readFile(filePath)
+            // Use streaming upload to avoid loading entire file into memory
+            fileStream = createReadStream(filePath)
 
-            // Create and send the S3 command
-            const command = new PutObjectCommand({
-              Bucket: bucketName,
-              Key: keyWithPrefix,
-              Body: fileContent
+            const upload = new Upload({
+              client: s3Client,
+              params: {
+                Bucket: bucketName,
+                Key: keyWithPrefix,
+                Body: fileStream
+              }
             })
 
-            await s3Client.send(command)
+            await upload.done()
 
-            // If the command succeeds, log the success and exit the retry loop
+            // If the upload succeeds, log the success and exit the retry loop
             logger.info(`Successfully stored file ${keyWithPrefix} in S3`)
             success = true
           } catch (error) {
@@ -76,6 +93,12 @@ export async function createS3StorageComponent(
             } else {
               logger.error(`Failed to store file ${keyWithPrefix} after 3 attempts`)
               logger.error(error as any)
+            }
+          } finally {
+            // Ensure stream is closed
+            if (fileStream) {
+              fileStream.destroy()
+              fileStream = null
             }
           }
         }

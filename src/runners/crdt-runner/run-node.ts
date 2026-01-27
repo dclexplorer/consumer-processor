@@ -17,11 +17,21 @@ export function runNode(components: Pick<AppComponents, 'logs'>, args: string[],
     logger.info(`about to exec: command: ${command}, timeout: ${timeout}`)
 
     let resolved = false
+    let killTimeoutId: NodeJS.Timeout | null = null
+
+    function cleanup() {
+      if (killTimeoutId) {
+        clearTimeout(killTimeoutId)
+        killTimeoutId = null
+      }
+    }
 
     const childProcess = exec(command, { timeout }, (error, stdout, stderr) => {
       if (resolved) {
         return
       }
+
+      cleanup()
 
       if (error) {
         for (const f of globSync('core.*')) {
@@ -36,15 +46,27 @@ export function runNode(components: Pick<AppComponents, 'logs'>, args: string[],
 
     const childProcessPid = childProcess.pid
 
-    childProcess.on('close', (_code, signal) => {
+    const closeHandler = (_code: number | null, signal: NodeJS.Signals | null) => {
+      cleanup()
       // timeout sends SIGTERM, we might want to kill it harder
       if (signal === 'SIGTERM') {
         childProcess.kill('SIGKILL')
       }
-    })
+      // Remove listener after handling
+      childProcess.removeListener('close', closeHandler)
+    }
 
-    setTimeout(() => {
-      exec(`kill -9 ${childProcessPid}`, () => {})
+    childProcess.on('close', closeHandler)
+
+    killTimeoutId = setTimeout(() => {
+      // Use process.kill instead of exec to avoid spawning another process
+      if (childProcessPid) {
+        try {
+          process.kill(childProcessPid, 'SIGKILL')
+        } catch (e) {
+          // Process may have already exited
+        }
+      }
       if (!resolved) {
         resolve({ error: true, stdout: '', stderr: 'timeout' })
         resolved = true

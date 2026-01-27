@@ -28,6 +28,14 @@ export function runDecentralandExplorer(
 
     // This flag ensures we resolve the promise only once.
     let resolved = false
+    let timeoutHandler: NodeJS.Timeout | null = null
+
+    function cleanup() {
+      if (timeoutHandler) {
+        clearTimeout(timeoutHandler)
+        timeoutHandler = null
+      }
+    }
 
     // Spawn the process in detached mode.
     // We cast the options to 'any' so that TypeScript accepts the 'detached' property.
@@ -36,7 +44,7 @@ export function runDecentralandExplorer(
       { timeout } as any,
       (error: ExecException | null, stdout: string, stderr: string) => {
         if (resolved) return
-        clearTimeout(timeoutHandler)
+        cleanup()
         if (error) {
           // Optionally, clean up core dump files on error.
           for (const f of globSync('core.*')) {
@@ -50,14 +58,11 @@ export function runDecentralandExplorer(
       }
     )
 
-    // Allow the child process to run independently.
-    childProcess.unref()
-
     // Save the child's PID.
     const childProcessPid = childProcess.pid
 
-    // Set a failsafe timeout. Using 'const' here as it is assigned only once.
-    const timeoutHandler = setTimeout(() => {
+    // Set a failsafe timeout.
+    timeoutHandler = setTimeout(() => {
       if (childProcessPid !== undefined) {
         try {
           // Kill the entire process group by sending SIGKILL to the negative PID.
@@ -79,10 +84,15 @@ export function runDecentralandExplorer(
       }
     }, timeout + 5000)
 
+    // Listen for close event to ensure cleanup
+    childProcess.on('close', () => {
+      cleanup()
+    })
+
     // As an extra guard, listen for the exit event.
     childProcess.on('exit', (code, signal) => {
       if (resolved) return
-      clearTimeout(timeoutHandler)
+      cleanup()
       resolved = true
       resolve({
         error: code !== 0,
